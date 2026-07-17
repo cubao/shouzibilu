@@ -68,10 +68,10 @@ $(CLI): $(LIB_OBJS) tools/cli.cc
 # 需要 em++ 在 PATH 中：source ../emsdk/emsdk_env.sh
 wasm: $(WASM_OUT)
 
-$(WASM_OUT): $(LIB_SRCS) $(NP_DIR)/include/naive_pinyin/*.h
+$(WASM_OUT): $(LIB_SRCS) $(NP_DIR)/src/*.h $(NP_DIR)/include/naive_pinyin/*.h Makefile
 	$(EMXX) $(EMXXFLAGS) $(INCLUDES) $(LIB_SRCS) -o $@ \
 	  -s EXPORTED_FUNCTIONS='["_np_create","_np_load_dict","_np_query","_np_destroy","_malloc","_free"]' \
-	  -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","lengthBytesUTF8","stringToUTF8"]' \
+	  -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","lengthBytesUTF8","stringToUTF8","HEAPU8"]' \
 	  -s MODULARIZE=1 \
 	  -s EXPORT_NAME=createNaivePinyin \
 	  -s ALLOW_MEMORY_GROWTH=1 \
