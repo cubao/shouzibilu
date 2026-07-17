@@ -34,7 +34,6 @@ WASM_OUT := $(WASM_DIR)/naive_pinyin.js
 # 词典工具
 DICT_OUT   := data/naive_pinyin.dict.txt
 RIME_ICE   := ../rime-ice
-RIME_ESSAY := ../rime-essay
 
 .PHONY: all native test wasm smoke dict clean
 
@@ -79,7 +78,6 @@ dict: $(DICT_OUT)
 $(DICT_OUT): tools/build_dict.py
 	python3 tools/build_dict.py \
 	  --rime-ice $(RIME_ICE) \
-	  --essay $(RIME_ESSAY)/essay.txt \
 	  --out $@
 
 clean:
