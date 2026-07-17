@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>手自笔录 · naive_pinyin demo</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }
+  h1 { font-size: 20px; }
+  .bar { margin: 12px 0; color: #666; font-size: 14px; }
+  select { font-size: 14px; }
+  #editor {
+    border: 1px solid #ccc; border-radius: 6px; padding: 12px;
+    min-height: 120px; font-size: 18px; line-height: 1.8; outline: none;
+  }
+  #editor:focus { border-color: #4a90d9; }
+  .composition { color: #4a90d9; text-decoration: underline; }
+  #candidates { margin-top: 8px; font-size: 16px; min-height: 28px; }
+  #candidates span { margin-right: 12px; cursor: pointer; }
+  #candidates span:hover { color: #4a90d9; }
+  #candidates .idx { color: #999; font-size: 12px; }
+  #status { color: #999; font-size: 13px; margin-top: 16px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>手自笔录 · naive_pinyin</h1>
+<div class="bar">
+  方案:
+  <select id="scheme">
+    <option value="ziranma">双拼 · 自然码</option>
+    <option value="full">全拼</option>
+  </select>
+  <label><input type="checkbox" id="fuzzy" checked> 模糊音 z/zh in/ing</label>
+</div>
+<div id="editor" tabindex="0"></div>
+<div id="candidates"></div>
+<div id="status">加载中…</div>
+
+<script src="../wasm/naive_pinyin.js"></script>
+<script>
+const editor = document.getElementById("editor");
+const candBox = document.getElementById("candidates");
+const status = document.getElementById("status");
+const schemeSel = document.getElementById("scheme");
+const fuzzyBox = document.getElementById("fuzzy");
+
+let Module, dictData, ziranma;
+let engine = null;
+let composition = "";   // 字母缓冲
+let candidates = [];
+
+async function boot() {
+  Module = await createNaivePinyin();  // UMD 全局工厂
+  [dictData, ziranma] = await Promise.all([
+    fetch("../data/naive_pinyin.dict.txt").then(r => r.arrayBuffer()),
+    fetch("../wasm/ziranma.json").then(r => r.json()),
+  ]);
+  rebuildEngine();
+  status.textContent = `就绪。词典 ${(dictData.byteLength/1048576).toFixed(1)} MB。点击文本框输入。`;
+  editor.focus();
+}
+
+function rebuildEngine() {
+  if (engine) Module.ccall("np_destroy", null, ["number"], [engine]);
+  const config = { max_candidates: 9 };
+  if (schemeSel.value === "ziranma") config.shuangpin = ziranma.shuangpin;
+  if (fuzzyBox.checked) config.fuzzy = [["z","zh"],["c","ch"],["s","sh"],["in","ing"],["en","eng"]];
+  engine = Module.ccall("np_create", "number", ["string"], [JSON.stringify(config)]);
+  const ptr = Module._malloc(dictData.byteLength);
+  Module.HEAPU8.set(new Uint8Array(dictData), ptr);
+  Module.ccall("np_load_dict", "number", ["number","number","number"], [engine, ptr, dictData.byteLength]);
+  Module._free(ptr);
+  composition = "";
+  render();
+}
+
+function query() {
+  if (!composition) { candidates = []; return; }
+  const s = Module.ccall("np_query", "string", ["number","string"], [engine, composition]);
+  const r = JSON.parse(s);
+  candidates = r.candidates || [];
+}
+
+function commitText(text, consumed) {
+  // 提交文本, 未消耗的字母留在缓冲里
+  const rest = composition.slice(consumed).replace(/^'+/, "");
+  const compNode = editor.querySelector(".composition");
+  if (compNode) compNode.remove();
+  editor.appendChild(document.createTextNode(text));
+  composition = rest;
+  render();
+}
+
+function render() {
+  const compNode = editor.querySelector(".composition");
+  if (compNode) compNode.remove();
+  if (composition) {
+    const span = document.createElement("span");
+    span.className = "composition";
+    span.textContent = composition;
+    editor.appendChild(span);
+  }
+  query();
+  candBox.innerHTML = "";
+  candidates.forEach((c, i) => {
+    const span = document.createElement("span");
+    span.innerHTML = `<span class="idx">${i + 1}</span>${c.text}`;
+    span.onclick = () => commitText(c.text, c.consumed);
+    candBox.appendChild(span);
+  });
+  placeCaretAtEnd();
+}
+
+function placeCaretAtEnd() {
+  editor.focus();
+  const sel = window.getSelection();
+  sel.selectAllChildren(editor);
+  sel.collapseToEnd();
+}
+
+editor.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const key = e.key;
+  if (/^[a-z]$/.test(key)) {
+    composition += key;
+    render();
+  } else if (key === "'" ) {
+    composition += "'";
+    render();
+  } else if (key === "Backspace") {
+    if (composition) {
+      composition = composition.slice(0, -1);
+      render();
+    } // 无缓冲时走默认删除
+    else return;
+  } else if (key === " " || /^[1-9]$/.test(key)) {
+    const idx = key === " " ? 0 : parseInt(key, 10) - 1;
+    if (candidates[idx]) commitText(candidates[idx].text, candidates[idx].consumed);
+  } else if (key === "Escape") {
+    composition = "";
+    render();
+  } else if (key === "Enter") {
+    if (composition) commitText(composition, composition.length);
+    else return;
+  } else {
+    return;  // 其他键(标点/方向键)走默认
+  }
+  e.preventDefault();
+});
+
+schemeSel.onchange = rebuildEngine;
+fuzzyBox.onchange = rebuildEngine;
+
+boot().catch(e => { status.textContent = "加载失败: " + e; });
+</script>
+</body>
+</html>

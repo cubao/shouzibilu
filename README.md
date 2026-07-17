@@ -45,6 +45,7 @@ make dict     # 生成精简词典（依赖 ../rime-ice）
 make ziranma  # 生成自然码双拼默认配置 wasm/ziranma.json
 make wasm     # 编译 WebAssembly（先 source ../emsdk/emsdk_env.sh）
 make smoke    # node 冒烟测试 wasm 产物
+make demo     # 起本地服务，打开 http://localhost:8000/demo/
 make clean
 ```
 
