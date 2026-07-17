@@ -40,7 +40,8 @@ data/                  生成的词典（gitignore，make dict 生成）
 ```sh
 make test     # 构建并运行 native 单元测试（日常开发主用）
 make native   # 只构建
-make dict     # 生成精简词典（依赖 ../rime-ice、../rime-essay）
+make cli      # 命令行查询工具（native 调试）
+make dict     # 生成精简词典（依赖 ../rime-ice）
 make wasm     # 编译 WebAssembly（先 source ../emsdk/emsdk_env.sh）
 make smoke    # node 冒烟测试 wasm 产物
 make clean
@@ -79,6 +80,15 @@ void       np_destroy(void* ctx);
 ```
 
 `shuangpin` 缺省即为全拼模式。自然码映射表由 `tools/gen_ziranma.py` 生成。
+
+## 快速体验
+
+```sh
+make dict cli
+./build/native/cli data/naive_pinyin.dict.txt '{}' nihaoshijie "xi'an"
+# 或不带查询词进入 REPL：
+./build/native/cli data/naive_pinyin.dict.txt '{"fuzzy":[["z","zh"],["in","ing"]]}'
+```
 
 ## 设计原则
 

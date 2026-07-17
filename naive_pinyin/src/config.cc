@@ -42,6 +42,13 @@ Config Config::FromJson(const std::string& json_str) {
     }
   }
 
+  if (j.contains("segment_penalty")) {
+    cfg.segment_penalty = j.at("segment_penalty").get<int>();
+    if (cfg.segment_penalty < 0) {
+      throw std::runtime_error("segment_penalty must be non-negative");
+    }
+  }
+
   if (j.contains("user_words")) {
     for (const auto& w : j.at("user_words")) {
       UserWord uw;

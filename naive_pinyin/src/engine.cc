@@ -2,6 +2,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "matcher.h"
+
 namespace naive_pinyin {
 
 std::unique_ptr<Engine> Engine::CreateFromJson(const std::string& config_json,
@@ -18,9 +20,15 @@ std::unique_ptr<Engine> Engine::CreateFromJson(const std::string& config_json,
 EngineImpl::EngineImpl(Config config) : config_(std::move(config)) {}
 
 bool EngineImpl::LoadDict(const char* data, size_t size) {
-  // M0 骨架：仅记录收到数据。M2 实现真正的词典解析。
-  dict_loaded_ = (data != nullptr && size > 0);
-  return dict_loaded_;
+  if (!dict_.Load(data, size)) return false;
+  // 用户自定义词并入词典（freq 直接作为 0..1000 的分数）。
+  for (const UserWord& w : config_.user_words) {
+    int score = static_cast<int>(w.freq);
+    if (score < 0) score = 0;
+    if (score > 1000) score = 1000;
+    dict_.AddEntry(w.pinyin, w.word, score);
+  }
+  return true;
 }
 
 std::string EngineImpl::Query(const std::string& input) const {
@@ -33,8 +41,22 @@ std::string EngineImpl::Query(const std::string& input) const {
       return err.dump();
     }
   }
-  // M0 骨架：M2 实现音节切分 + DP 匹配。
-  return "[]";
+
+  Matcher matcher(dict_, config_.fuzzy, config_.max_candidates,
+                  config_.segment_penalty);
+  std::vector<MatchCandidate> candidates = matcher.Match(input);
+
+  nlohmann::json out;
+  out["input"] = input;
+  out["candidates"] = nlohmann::json::array();
+  for (const MatchCandidate& c : candidates) {
+    out["candidates"].push_back({
+        {"text", c.text},
+        {"consumed", c.consumed},
+        {"score", c.score},
+    });
+  }
+  return out.dump();
 }
 
 }  // namespace naive_pinyin

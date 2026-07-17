@@ -28,6 +28,7 @@ LIB_OBJS  := $(patsubst $(NP_DIR)/src/%.cc,$(NATIVE_DIR)/%.o,$(LIB_SRCS))
 TEST_OBJS := $(patsubst tests/%.cc,$(NATIVE_DIR)/test_%.o,$(TEST_SRCS))
 
 RUN_TESTS := $(NATIVE_DIR)/run_tests
+CLI       := $(NATIVE_DIR)/cli
 
 WASM_OUT := $(WASM_DIR)/naive_pinyin.js
 
@@ -55,6 +56,11 @@ $(RUN_TESTS): $(LIB_OBJS) $(TEST_OBJS)
 
 test: $(RUN_TESTS)
 	./$(RUN_TESTS)
+
+cli: $(CLI)
+
+$(CLI): $(LIB_OBJS) tools/cli.cc
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $@
 
 # ---- wasm ----
 # 需要 em++ 在 PATH 中：source ../emsdk/emsdk_env.sh

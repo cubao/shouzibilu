@@ -2,6 +2,7 @@
 #pragma once
 
 #include "config.h"
+#include "dict.h"
 #include <naive_pinyin/naive_pinyin.h>
 
 namespace naive_pinyin {
@@ -15,7 +16,7 @@ class EngineImpl : public Engine {
 
  private:
   Config config_;
-  bool dict_loaded_ = false;
+  Dict dict_;
 };
 
 }  // namespace naive_pinyin

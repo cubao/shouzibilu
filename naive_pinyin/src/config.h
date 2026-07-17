@@ -23,6 +23,9 @@ struct Config {
 
   int max_candidates = 10;
 
+  // DP 打分：每多一个分段的罚分。越大越偏好长词/少分段。
+  int segment_penalty = 1100;
+
   std::vector<UserWord> user_words;
 
   // 解析 JSON 配置。解析失败抛 std::runtime_error。
