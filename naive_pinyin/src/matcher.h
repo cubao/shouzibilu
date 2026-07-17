@@ -2,6 +2,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "config.h"
@@ -19,8 +20,10 @@ struct MatchCandidate {
 class Matcher {
  public:
   // segment_penalty: 每多一个分段扣的分。越大越偏好长词/少分段。
+  // shuangpin_map 非空时按双拼切分（2 字母一码查表），否则全拼。
   Matcher(const Dict& dict, std::vector<std::pair<std::string, std::string>> fuzzy,
-          int max_candidates, int segment_penalty);
+          int max_candidates, int segment_penalty,
+          const std::unordered_map<std::string, std::string>* shuangpin_map = nullptr);
 
   std::vector<MatchCandidate> Match(const std::string& input) const;
 
@@ -31,6 +34,7 @@ class Matcher {
   const Dict& dict_;
   int max_candidates_;
   int segment_penalty_;
+  const std::unordered_map<std::string, std::string>* shuangpin_map_;
 
   // 模糊音规则：声母对（如 z<->zh）与韵母对（如 in<->ing）。
   std::vector<std::pair<std::string, std::string>> initial_pairs_;

@@ -43,7 +43,9 @@ std::string EngineImpl::Query(const std::string& input) const {
   }
 
   Matcher matcher(dict_, config_.fuzzy, config_.max_candidates,
-                  config_.segment_penalty);
+                  config_.segment_penalty,
+                  config_.shuangpin_map.empty() ? nullptr
+                                                : &config_.shuangpin_map);
   std::vector<MatchCandidate> candidates = matcher.Match(input);
 
   nlohmann::json out;

@@ -28,10 +28,12 @@ bool IsInitial(const std::string& s) {
 
 Matcher::Matcher(const Dict& dict,
                  std::vector<std::pair<std::string, std::string>> fuzzy,
-                 int max_candidates, int segment_penalty)
+                 int max_candidates, int segment_penalty,
+                 const std::unordered_map<std::string, std::string>* shuangpin_map)
     : dict_(dict),
       max_candidates_(max_candidates),
-      segment_penalty_(segment_penalty) {
+      segment_penalty_(segment_penalty),
+      shuangpin_map_(shuangpin_map) {
   for (auto& p : fuzzy) {
     if (IsInitial(p.first) && IsInitial(p.second)) {
       initial_pairs_.push_back(std::move(p));
@@ -98,7 +100,9 @@ std::vector<MatchCandidate> Matcher::Match(const std::string& input) const {
   std::vector<MatchCandidate> result;
   if (input.empty() || dict_.num_entries() == 0) return result;
 
-  Segmentation seg = SegmentFullPinyin(input);
+  Segmentation seg = (shuangpin_map_ && !shuangpin_map_->empty())
+                         ? SegmentShuangpin(input, *shuangpin_map_)
+                         : SegmentFullPinyin(input);
   const int n = seg.length;
   const int max_depth = dict_.max_key_length();
 

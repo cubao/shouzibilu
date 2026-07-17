@@ -125,4 +125,29 @@ Segmentation SegmentFullPinyin(const std::string& input) {
   return seg;
 }
 
+Segmentation SegmentShuangpin(
+    const std::string& input,
+    const std::unordered_map<std::string, std::string>& code_map) {
+  Segmentation seg;
+  const int n = static_cast<int>(input.size());
+  seg.length = n;
+  seg.edges_from.resize(n + 1);
+  seg.boundary.assign(n + 1, false);
+
+  int seg_start = 0;
+  for (int i = 0; i <= n; ++i) {
+    if (i == n || input[i] == '\'') {
+      if (i < n) seg.boundary[i] = true;
+      for (int s = seg_start; s + 2 <= i; s += 2) {
+        auto it = code_map.find(input.substr(s, 2));
+        if (it != code_map.end()) {
+          seg.edges_from[s].push_back({s, s + 2, it->second});
+        }
+      }
+      seg_start = i + 1;
+    }
+  }
+  return seg;
+}
+
 }  // namespace naive_pinyin

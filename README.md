@@ -42,6 +42,7 @@ make test     # 构建并运行 native 单元测试（日常开发主用）
 make native   # 只构建
 make cli      # 命令行查询工具（native 调试）
 make dict     # 生成精简词典（依赖 ../rime-ice）
+make ziranma  # 生成自然码双拼默认配置 wasm/ziranma.json
 make wasm     # 编译 WebAssembly（先 source ../emsdk/emsdk_env.sh）
 make smoke    # node 冒烟测试 wasm 产物
 make clean

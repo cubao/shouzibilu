@@ -2,6 +2,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace naive_pinyin {
@@ -33,5 +34,11 @@ struct Segmentation {
 
 // 全拼切分：枚举所有合法音节边（含 apostrophe 硬边界处理）。
 Segmentation SegmentFullPinyin(const std::string& input);
+
+// 双拼切分：每 2 字母查 code_map 得一个音节。
+// 未命中码表或段长为奇数的位置无边（死路）。apostrophe 为硬边界。
+Segmentation SegmentShuangpin(
+    const std::string& input,
+    const std::unordered_map<std::string, std::string>& code_map);
 
 }  // namespace naive_pinyin

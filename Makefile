@@ -46,10 +46,12 @@ $(NATIVE_DIR):
 	mkdir -p $@
 
 $(NATIVE_DIR)/%.o: $(NP_DIR)/src/%.cc | $(NATIVE_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -MMD -MP -c $< -o $@
 
 $(NATIVE_DIR)/test_%.o: tests/%.cc | $(NATIVE_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -Itests -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -Itests -MMD -MP -c $< -o $@
+
+-include $(LIB_OBJS:.o=.d) $(TEST_OBJS:.o=.d)
 
 $(RUN_TESTS): $(LIB_OBJS) $(TEST_OBJS)
 	$(CXX) $(CXXFLAGS) $^ -o $@
@@ -85,6 +87,12 @@ $(DICT_OUT): tools/build_dict.py
 	python3 tools/build_dict.py \
 	  --rime-ice $(RIME_ICE) \
 	  --out $@
+
+# 自然码双拼默认配置（前端作为默认 shuangpin map）
+ziranma: $(WASM_DIR)/ziranma.json
+
+$(WASM_DIR)/ziranma.json: tools/gen_ziranma.py tools/build_dict.py
+	python3 tools/gen_ziranma.py > $@
 
 clean:
 	rm -rf $(BUILD) $(WASM_OUT) $(WASM_DIR)/naive_pinyin.wasm
