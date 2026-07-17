@@ -1,0 +1,6 @@
+build/
+data/
+wasm/naive_pinyin.js
+wasm/naive_pinyin.wasm
+__pycache__/
+.DS_Store
