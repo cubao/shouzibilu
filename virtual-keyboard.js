@@ -5,11 +5,12 @@
  * 自定义 JSON 表）渲染，按键经 ime.sendKey 注入，与物理键盘走完全同一管线。
  *
  * 布局（六排，仿真实键盘轮廓 + ANSI 错行）：
- *   第0排:  ▽    ! @ # $ % ^ & * ( ) { } _ = -   （shifted 数字符号+补充符号，直按）
- *   第A排:  `~   1 2 3 4 5 6 7 8 9 0 \ | + [ ]   （数字+补充符号，直按）
- *   第1排:  Tab     q w e r t y u i o p  ⌫        （字母按布局表；右错 3%）
- *   第2排:  ESC     a s d f g h j k l ;  '        （右错 5.5%）
- *   第3排:  ⇧       z x c v b n m , . /  ⏎        （右错 9%）
+ *   第0排:  ▽    ! @ # $ % ^ & * ( ) { } [ ] +   （shifted 数字符号+补充符号，直按）
+ *   第A排:  `~   1 2 3 4 5 6 7 8 9 0 \ | = _ -   （数字+补充符号，直按）
+ *   第1排:  Tab     q w e r t y u i o p  ⌫        （字母按布局表；右错 2%）
+ *   第2排:  ESC     a s d f g h j k l ;  '        （右错 4%）
+ *   第3排:  ⇧       z x c v b n m , . /  ⏎        （右错 6.5%）
+ *   （第0/A 排高度 = 字母排的 60%）
  *   第4排:  Ctrl 中/EN 👆 [—— 空格 ——] ← ↑ ↓ →
  *   ; ' , . / 是常规字母区键位，随布局表整体翻译（dvorak 系下出字母）。
  *
@@ -42,10 +43,10 @@ const ROW2 = ["KeyA", "KeyS", "KeyD", "KeyF", "KeyG", "KeyH", "KeyJ", "KeyK", "K
 const ROW3 = ["KeyZ", "KeyX", "KeyC", "KeyV", "KeyB", "KeyN", "KeyM",
               "Comma", "Period", "Slash"];
 // 第0排：shifted 数字符号 + 补充符号（直按）；第A排：数字 + 补充符号（直按）
-const SYM_ROW0 = "! @ # $ % ^ & * ( ) { } _ = -".split(" ");
-const SYM_ROWA = "1 2 3 4 5 6 7 8 9 0 \\ | + [ ]".split(" ");
+const SYM_ROW0 = "! @ # $ % ^ & * ( ) { } [ ] +".split(" ");
+const SYM_ROWA = "1 2 3 4 5 6 7 8 9 0 \\ | = _ -".split(" ");
 // 字母排错行幅度（行宽百分比，ANSI 错落比例）
-const STAGGER = ["3%", "5.5%", "9%"];
+const STAGGER = ["2%", "4%", "6.5%"];
 // 双拼声母键提示（zh/ch/sh = v/i/u）
 const SP_HINT = { v: "zh", i: "ch", u: "sh" };
 
@@ -76,8 +77,9 @@ function attach(ime, textarea, opts) {
       "touch-action:none;box-shadow:0 -1px 8px rgba(0,0,0,.18);transition:opacity .15s}" +
     ".vkb-faded{opacity:.12}" +
     ".vkb-body{display:flex;flex-direction:column;gap:5px;box-sizing:border-box;" +
-      "height:calc(6 * clamp(46px,8vh,72px) + 25px)}" +
+      "height:calc(5.2 * clamp(46px,8vh,72px) + 25px)}" +   /* 4×1 + 2×0.6 排 */
     ".vkb-row{display:flex;gap:5px;flex:1;min-height:0}" +
+    ".vkb-thin{flex:0.6}" +   /* 第0/A 排：60% 高 */
     ".vkb-key{flex:1;background:#fdfdfd;border-radius:6px;box-shadow:0 1px 0 rgba(0,0,0,.35);" +
       "display:flex;align-items:center;justify-content:center;position:relative;" +
       "color:#111;font-size:16px;cursor:pointer;min-width:0;overflow:hidden}" +
@@ -236,8 +238,9 @@ function attach(ime, textarea, opts) {
     el.addEventListener("pointerdown", (e) => { e.preventDefault(); fn(e); });
   }
 
-  // 第0排：▽ + shifted 数字符号 + { }
+  // 第0排：▽ + shifted 数字符号 + 补充符号（60% 高）
   const r0 = mkRow();
+  r0.classList.add("vkb-thin");
   const kClose = mkKey(r0, "vkb-fcell", "▽");
   kClose.title = "收起键盘";
   pd(kClose, () => closeKb());
@@ -245,8 +248,9 @@ function attach(ime, textarea, opts) {
     const k = mkKey(r0, "vkb-char", ch);
     pd(k, () => fireChar(ch));
   }
-  // 第A排：`~ + 数字 + \ |
+  // 第A排：`~ + 数字 + 补充符号（60% 高）
   const rA = mkRow();
+  rA.classList.add("vkb-thin");
   kBackq = mkKey(rA, "vkb-fcell");
   pd(kBackq, () => fireCode("Backquote"));
   for (const ch of SYM_ROWA) {
