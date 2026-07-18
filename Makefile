@@ -85,6 +85,28 @@ $(WASM_OUT): $(LIB_SRCS) $(NP_DIR)/src/*.h $(NP_DIR)/include/naive_pinyin/*.h Ma
 smoke: wasm
 	node wasm/smoke_test.js
 
+# ---- npm 包 @cubao/naive-pinyin ----
+# 组装 npm/ 目录（产物拷入, 静态文件已在库中）, 发布见 README
+NPM_DIR := npm
+
+npm: $(WASM_OUT) $(DICT_OUT) $(WASM_DIR)/ziranma.json
+	cp $(WASM_OUT) $(WASM_DIR)/naive_pinyin.wasm $(NPM_DIR)/
+	cp $(DICT_OUT) $(NPM_DIR)/naive_pinyin.dict.txt
+	cp $(WASM_DIR)/ziranma.json $(NPM_DIR)/
+	cp LICENSE $(NPM_DIR)/
+	@echo "npm 包已组装: $(NPM_DIR)/ (发布: make npm-publish)"
+
+npm-test: npm
+	node $(NPM_DIR)/test.js
+
+# 发布到官方 registry（全局默认是 npmmirror 只读镜像, 禁止发布, 必须显式覆盖;
+# scoped 包默认私有, 需 --access public; ~/.npmrc 的 granular token 已绕过 2FA, 无需 OTP）
+NPM_REGISTRY := https://registry.npmjs.org
+
+npm-publish: npm
+	cd $(NPM_DIR) && npm pack --dry-run --registry=$(NPM_REGISTRY)
+	cd $(NPM_DIR) && npm publish --access public --registry=$(NPM_REGISTRY)
+
 # 浏览器 demo（index.html 在仓库根, 与 GitHub Pages 同构; no-store 禁缓存）
 demo: $(WASM_OUT) $(DICT_OUT) $(WASM_DIR)/ziranma.json
 	python3 tools/serve.py 8000

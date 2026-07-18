@@ -35,6 +35,25 @@ wasm/                  wasm 产物（已入库供 Pages 部署）与 JS glue、n
 data/                  生成的词典（naive_pinyin.dict.txt 已入库；jieba 源文件 gitignore）
 ```
 
+## npm 包（@cubao/naive-pinyin）
+
+`npm/` 目录即 npm 包：薄 JS 封装（隐藏 ccall 样板）+ wasm + 自然码码表 +
+精简词库，开箱即用。静态文件（package.json / index.js / index.d.ts /
+README.md）在库中，构建产物由 `make npm` 拷入（gitignore）。
+
+```js
+const { createEngine, ziranma } = require("@cubao/naive-pinyin");
+const engine = await createEngine({ shuangpin: ziranma.shuangpin });
+engine.query("nihkuijx").candidates[0].text;  // => 你好世界
+```
+
+发布流程（需 npm 账号且属于 @cubao org）：
+
+```sh
+make npm                              # 组装
+cd npm && npm publish --access public # 发布（scoped 包默认私有，需显式 public）
+```
+
 ## 部署（GitHub Pages）
 
 wasm 产物与词典已入库，`index.html` 在仓库根。仓库设置 → Pages →
@@ -54,6 +73,8 @@ make wasm     # 编译 WebAssembly（先 source ../emsdk/emsdk_env.sh）
 make smoke    # node 冒烟测试 wasm 产物
 make demo     # 起本地服务，打开 http://localhost:8000/
 make regression  # 排序质量回归（21 条断言）
+make npm      # 组装 npm 包到 npm/（@cubao/naive-pinyin）
+make npm-test # 组装并自测 npm 包封装
 make clean
 ```
 
