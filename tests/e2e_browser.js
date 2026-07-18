@@ -503,6 +503,143 @@ const PORT = process.env.E2E_PORT || 8971;
   check("block 光标是 difference 混合、无文本重绘",
         blend.bm === "difference" && blend.text === "");
 
+  // ---------- 12.5 虚拟键盘（桌面“开”档，合成 pointer 事件=点按）----------
+  await page.selectOption("#layout", "qwerty");
+  await page.selectOption("#vkb", "on");
+  check("开档显示上拉手柄", await page.isVisible(".vkb-handle"));
+  await page.click(".vkb-handle");
+  check("点手柄展开键盘", await page.isVisible(".vkb-panel"));
+  await page.waitForTimeout(120);   // padding 在 rAF 里应用
+  const padB = await page.evaluate(() =>
+    parseFloat(getComputedStyle(document.getElementById("editor")).paddingBottom));
+  check("展开后文本区底部补 padding", padB > 100, String(padB));
+  check("桌面开档不设 readonly", await page.evaluate(() =>
+    !document.getElementById("editor").readOnly));
+
+  // 主区/功能列按键按文本匹配；双标签键（数字列）用 firstChild 文本
+  const vkTap = (t) => page.evaluate((t2) => {
+    for (const k of document.querySelectorAll(".vkb-main .vkb-key, .vkb-fcol .vkb-key")) {
+      if (k.textContent === t2) {
+        k.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        k.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+        return true;
+      }
+    }
+    return false;
+  }, t);
+  const vkDigit = (n) => page.evaluate((n2) => {
+    const el = document.querySelectorAll(".vkb-scols .vkb-key")[n2 === 0 ? 9 : n2 - 1];
+    if (!el) return false;
+    el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+    return true;
+  }, n);
+
+  await vkTap("i");
+  check("vkb i 进入 INSERT(中)", (await badge()) === "中");
+  await vkTap("中");
+  check("中/EN 键切到 EN", (await badge()) === "EN");
+  const langLabel = await page.evaluate(() => {
+    for (const k of document.querySelectorAll(".vkb-main .vkb-key"))
+      if (k.textContent === "EN" || k.textContent === "中") return k.textContent;
+    return null;
+  });
+  check("中/EN 键面跟着显示 EN", langLabel === "EN", String(langLabel));
+
+  await setDoc("", 0);
+  for (const ch of "hello") await vkTap(ch);
+  check("EN 点字上屏（模拟浏览器默认行为）", (await value()) === "hello", await value());
+
+  // sticky Shift：武装→键面大写→发键出大写→自动解除
+  const armed1 = await page.evaluate(() => {
+    for (const k of document.querySelectorAll(".vkb-fcol .vkb-key"))
+      if (k.textContent === "⇧") {
+        k.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        return k.classList.contains("vkb-armed");
+      }
+    return null;
+  });
+  check("Shift 武装高亮", armed1 === true, String(armed1));
+  const labelUp = await page.evaluate(() =>
+    document.querySelectorAll(".vkb-main .vkb-row")[0].children[0].textContent);
+  check("武装后键面变大写", labelUp === "Q", String(labelUp));
+  await vkTap("W");
+  check("武装后字母出大写", (await value()) === "helloW", await value());
+  const armed2 = await page.evaluate(() => {
+    for (const k of document.querySelectorAll(".vkb-fcol .vkb-key"))
+      if (k.textContent === "⇧") return k.classList.contains("vkb-armed");
+    return null;
+  });
+  check("发键后武装自动解除", armed2 === false, String(armed2));
+
+  await vkTap("⌫");
+  check("⌫ 删除（模拟默认行为）", (await value()) === "hello", await value());
+
+  // 中文：点拼音码 → 候选 → 数字键选词
+  await vkTap("EN");
+  check("切回中文", (await badge()) === "中");
+  await setDoc("", 0);
+  await vkTap("n"); await vkTap("i"); await vkTap("h"); await vkTap("k");   // 自然码 你好
+  check("点拼音码出候选", await popupVisible());
+  const idxNi = await candIndex("你好");
+  check("候选含你好", idxNi !== null);
+  await vkDigit(idxNi || 1);
+  check("数字键选词上屏", (await value()) === "你好", await value());
+
+  await vkTap("ESC");
+  check("ESC 回 NORMAL", (await badge()) === "NORMAL");
+  await setDoc("abcd", 2);
+  await vkTap("←");
+  check("← 左移", (await curPos()) === 1, String(await curPos()));
+
+  // 长按 ← = Home（超过 500ms 阈值；INSERT 下走模拟默认行为）
+  await setDoc("abcdef", 4);
+  await vkTap("i");   // INSERT
+  await page.evaluate(() => {
+    for (const k of document.querySelectorAll(".vkb-main .vkb-key"))
+      if (k.textContent === "←")
+        k.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  });
+  await page.waitForTimeout(650);
+  await page.evaluate(() => {
+    for (const k of document.querySelectorAll(".vkb-main .vkb-key"))
+      if (k.textContent === "←")
+        k.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+  });
+  check("长按 ← = Home", (await curPos()) === 0, String(await curPos()));
+
+  // 小红点：真鼠标长按拖动（pointer capture 需要活动指针）
+  await setDoc("aaaaaaaa\nbbbbbbbb", 0);   // 仍是 INSERT
+  const dotBox = await page.locator(".vkb-dot").boundingBox();
+  const dcx = dotBox.x + dotBox.width / 2, dcy = dotBox.y + dotBox.height / 2;
+  await page.mouse.move(dcx, dcy);
+  await page.mouse.down();
+  await page.waitForTimeout(450);   // 超过 350ms 激活阈值
+  check("长按红点激活放大镜", await page.isVisible(".vkb-loupe"));
+  await page.mouse.move(dcx + 60, dcy + 10, { steps: 6 });
+  const fadedMid = await page.evaluate(() =>
+    document.querySelector(".vkb-panel").classList.contains("vkb-faded"));
+  check("拖动时键盘淡出", fadedMid);
+  await page.mouse.up();
+  check("拖动后光标右移", (await curPos()) > 0, String(await curPos()));
+  check("松手放大镜关闭、键盘恢复", !(await page.isVisible(".vkb-loupe")) &&
+    !(await page.evaluate(() => document.querySelector(".vkb-panel").classList.contains("vkb-faded"))));
+
+  // ▽ 收起
+  await page.evaluate(() => {
+    const cells = document.querySelectorAll(".vkb-scols .vkb-key");
+    const last = cells[cells.length - 1];
+    last.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    last.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+  });
+  check("▽ 收起键盘、手柄复现",
+    !(await page.isVisible(".vkb-panel")) && await page.isVisible(".vkb-handle"));
+  const padB2 = await page.evaluate(() =>
+    parseFloat(getComputedStyle(document.getElementById("editor")).paddingBottom));
+  check("收起后 padding 还原", padB2 <= 13, String(padB2));
+  await page.keyboard.press("Escape");
+  await setDoc("", 0);
+
   // 持久化：写内容 + 改映射草稿 → pagehide → 重载恢复
   await setDoc("持久化测试内容", 0);
   await page.evaluate(() => {
