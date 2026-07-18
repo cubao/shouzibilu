@@ -5,11 +5,11 @@
  * 自定义 JSON 表）渲染，按键经 ime.sendKey 注入，与物理键盘走完全同一管线。
  *
  * 布局（六排，仿真实键盘轮廓 + ANSI 错行）：
- *   第0排:  ▽    ! @ # $ % ^ & * ( ) { }        （shifted 数字符号，直按）
- *   第A排:  `~   1 2 3 4 5 6 7 8 9 0 \ |          （数字，直按）
- *   第1排:  Tab  _ =   q w e r t y u i o p  ⌫     （字母按布局表；右错 3%）
- *   第2排:  ESC  - +   a s d f g h j k l ;  '     （右错 5.5%）
- *   第3排:  ⇧    [ ]   z x c v b n m , . /  ⏎     （右错 9%）
+ *   第0排:  ▽    ! @ # $ % ^ & * ( ) { } _ = -   （shifted 数字符号+补充符号，直按）
+ *   第A排:  `~   1 2 3 4 5 6 7 8 9 0 \ | + [ ]   （数字+补充符号，直按）
+ *   第1排:  Tab     q w e r t y u i o p  ⌫        （字母按布局表；右错 3%）
+ *   第2排:  ESC     a s d f g h j k l ;  '        （右错 5.5%）
+ *   第3排:  ⇧       z x c v b n m , . /  ⏎        （右错 9%）
  *   第4排:  Ctrl 中/EN 👆 [—— 空格 ——] ← ↑ ↓ →
  *   ; ' , . / 是常规字母区键位，随布局表整体翻译（dvorak 系下出字母）。
  *
@@ -41,11 +41,9 @@ const ROW2 = ["KeyA", "KeyS", "KeyD", "KeyF", "KeyG", "KeyH", "KeyJ", "KeyK", "K
               "Semicolon", "Quote"];
 const ROW3 = ["KeyZ", "KeyX", "KeyC", "KeyV", "KeyB", "KeyN", "KeyM",
               "Comma", "Period", "Slash"];
-// 第0排：shifted 数字符号 + {}（直按）；第A排：数字 + \ |（直按）
-const SYM_ROW0 = "! @ # $ % ^ & * ( ) { }".split(" ");
-const SYM_ROWA = "1 2 3 4 5 6 7 8 9 0 \\ |".split(" ");
-// 字母三排左侧的符号两列（每排一对，随排一起错行）
-const SYM_MID = [["_", "="], ["-", "+"], ["[", "]"]];
+// 第0排：shifted 数字符号 + 补充符号（直按）；第A排：数字 + 补充符号（直按）
+const SYM_ROW0 = "! @ # $ % ^ & * ( ) { } _ = -".split(" ");
+const SYM_ROWA = "1 2 3 4 5 6 7 8 9 0 \\ | + [ ]".split(" ");
 // 字母排错行幅度（行宽百分比，ANSI 错落比例）
 const STAGGER = ["3%", "5.5%", "9%"];
 // 双拼声母键提示（zh/ch/sh = v/i/u）
@@ -85,7 +83,6 @@ function attach(ime, textarea, opts) {
       "color:#111;font-size:16px;cursor:pointer;min-width:0;overflow:hidden}" +
     ".vkb-key:active{background:#aab2bd}" +
     ".vkb-fcell{flex:none;width:clamp(30px,7.5%,52px);background:#b9c0ca;font-size:11px}" +
-    ".vkb-sym{flex:none;width:clamp(24px,6%,40px);font-size:14px}" +
     ".vkb-char{font-size:14px}" +
     ".vkb-wide{flex:1.5}" +
     ".vkb-space{flex:4.2}" +
@@ -256,7 +253,7 @@ function attach(ime, textarea, opts) {
     const k = mkKey(rA, "vkb-char", ch);
     pd(k, () => fireChar(ch));
   }
-  // 字母三排：左功能格 + 错行 + 符号两列 + 字母（+ ⌫/⏎）
+  // 字母三排：左功能格 + 错行 + 字母（+ ⌫/⏎）
   const letterRows = [ROW1, ROW2, ROW3];
   let repTimer = null;   // ⌫ 长按重复定时器（destroy 时清理）
   for (let i = 0; i < 3; i++) {
@@ -271,11 +268,7 @@ function attach(ime, textarea, opts) {
       kShift = mkKey(r, "vkb-fcell", "⇧");
       pd(kShift, () => { shiftArm = !shiftArm; refreshLabels(); });
     }
-    mkStagger(r, i);   // 错行：符号两列与字母一起右错
-    for (const ch of SYM_MID[i]) {
-      const k = mkKey(r, "vkb-sym", ch);
-      pd(k, () => fireChar(ch));
-    }
+    mkStagger(r, i);   // 错行：字母区整体右错
     for (const code of letterRows[i]) {
       const k = mkKey(r, "");
       letterKeys.push({ el: k, code });
