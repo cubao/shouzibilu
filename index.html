@@ -35,6 +35,10 @@
   #mode.search { background: #b07500; }
   #mode.en { background: #888; }
   #status { color: #999; font-size: 13px; margin-top: 16px; white-space: pre-wrap; }
+  /* 虚拟键盘展开时：只留编辑区（body 底部 padding 由 JS 设为键盘高，编辑器贴住键盘） */
+  body.vkb-open h1, body.vkb-open .bar, body.vkb-open details, body.vkb-open #status {
+    display: none;
+  }
   details { margin-top: 12px; font-size: 14px; color: #666; }
   #mappings {
     width: 100%; box-sizing: border-box; min-height: 180px;
@@ -67,7 +71,7 @@
     <option value="ziranma">双拼 · 自然码</option>
     <option value="full">全拼</option>
   </select>
-  <label title="精简 vim：NORMAL（移动/操作）/ 插入（输入+输入法）/ SEARCH（查找）&#10;Esc 回 NORMAL（Ctrl+[、Ctrl+C 同效），i 进插入&#10;操作: d c y > 配合移动/文本对象；dd cc yy >> << 整行&#10;移动: h j k l、0 ^ $、w b e（每汉字一词）、gg G、%、f F t T&#10;文本对象: iw aw、引号（含 “”‘’）、括号（含 （）【】《》「」）&#10;查找: / ?（可打拼音搜中文），n N 重复；u 撤销；r 替换单字符"><input type="checkbox" id="vim" checked> vim</label>
+  <label title="精简 vim：NORMAL（移动/操作）/ 插入（输入+输入法）/ SEARCH（查找）&#10;Esc 回 NORMAL（Ctrl+[、Ctrl+C 同效），i 进插入&#10;操作: d c y > 配合移动/文本对象；dd cc yy >> << 整行&#10;移动: h j k l、0 ^ $、w b e（每汉字一词）、gg G、%、f F t T&#10;文本对象: iw aw、引号（含 “”‘’）、括号（含 （）【】《》「」）&#10;查找: / ?（可打拼音搜中文），n N 重复；u 撤销；r 替换单字符&#10;J 合并下一行（补空格），gJ 合并（不补空格）"><input type="checkbox" id="vim" checked> vim</label>
   <br />
   <span id="mode" title="当前模式：NORMAL 普通 / 插入（中·EN） / SEARCH 查找">…</span>
   <label title="模糊音：z=zh、c=ch、s=sh、in=ing、en=eng 混同匹配"><input type="checkbox" id="fuzzy" checked> 模糊音</label>
@@ -165,6 +169,7 @@ A 行尾插入，I 行首非空白插入，o/O 上下开新行。
 f F t T 行内找字符。查找：/ 向下 ? 向上（可打拼音搜中文），
 n N 重复。操作：d c y > 配移动或文本对象；dd cc yy >> << 整行；
 x 删字，p P 粘贴，u 撤销，r 替换单字符。
+J 合并下一行（补空格），gJ 合并（不补空格）。
 文本对象：iw aw、引号（含 “” ‘’）、括号（含 （）【】《》「」）。
 比如 diw 删一词，ci( 改括号内，da“ 连引号删。
 
@@ -286,6 +291,11 @@ async function boot() {
     coarse,
     // 仅双拼方案下给键面韵母标注（全拼不标）
     getShuangpinFinals: () => schemeSel.value === "ziranma" ? spFinals : null,
+    padContent: false,   // 不用内容 padding，改由 body 收底让编辑器贴住键盘
+    onToggle(open, kbHeight) {
+      document.body.classList.toggle("vkb-open", open);   // 隐藏标题/工具栏/状态
+      document.body.style.paddingBottom = open ? kbHeight + "px" : "";
+    },
   });
   vkbApplySetting();
   setInterval(persistAll, 10000);

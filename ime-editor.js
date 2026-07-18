@@ -1120,6 +1120,22 @@ function attach(textarea, opts) {
     }
   }
 
+  // 合并行：J = 下一行并到当前行（去前导空白、中间补一个空格）；gJ = 直接并不补
+  function doJoin(withSpace) {
+    const v = val(), p = cur();
+    const le = lineEnd(v, p);
+    if (le >= v.length) return;              // 已是末行
+    const head = v.slice(0, le);
+    const tail = v.slice(le + 1);
+    if (withSpace) {
+      const t = tail.replace(/^[ \t]+/, "");
+      const sep = (head === "" || /[ \t]$/.test(head) || t === "") ? "" : " ";
+      applyText(head + sep + t, le);
+    } else {
+      applyText(head + tail, le);
+    }
+  }
+
   function doSearch(pat, dir) {
     if (!pat) return;
     const v = val(), p = cur();
@@ -1188,6 +1204,8 @@ function attach(textarea, opts) {
           const [s, e2, lw] = rangeOf(op, { to: 0, linewise: true });
           doOperator(op, s, e2, lw);
         } else setCur(0);
+      } else if (ch === "J" && !op) {   // gJ：合并行（不补空格）
+        doJoin(false);
       }
       return true;
     }
@@ -1286,6 +1304,7 @@ function attach(textarea, opts) {
         }
         return true;
       }
+      case "J": doJoin(true); return true;   // J：合并行（补一个空格）
       case "d": case "c": case "y": case ">": pendingOp = ch; return true;
       case "<": doLinewise("<"); return true;
       case "p": doPaste(true); return true;

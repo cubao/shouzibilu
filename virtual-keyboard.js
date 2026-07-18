@@ -27,7 +27,9 @@
  *   const vkb = VirtualKeyboard.attach(ime, textarea, {
  *     coarse: true,
  *     getShuangpinFinals: () => ({ q: ["iu"], ... } | null),   // 可选
- *   });
+ *     onToggle: (open, kbHeight) => {},   // 可选：展开/收起回调（页面可借此隐藏杂物、收底）
+ *     padContent: true,                   // 可选：展开时给 textarea 内容加底部 padding
+ *   });                                   // （页面用 onToggle 自收容器时可关）
  *   vkb.setEnabled(true);    // 显示上拉手柄 / 恢复上次展开状态
  *   vkb.refresh();           // 布局/方案等配置变化后重读配置刷新键面
  *   vkb.destroy();
@@ -53,7 +55,12 @@ const SP_HINT = { v: "zh", i: "ch", u: "sh" };
 const LS_KEY = "shouzibilu.vkb";
 
 function attach(ime, textarea, opts) {
-  const cfg = Object.assign({ coarse: false, getShuangpinFinals: () => null }, opts);
+  const cfg = Object.assign({
+    coarse: false,
+    getShuangpinFinals: () => null,
+    onToggle: () => {},
+    padContent: true,
+  }, opts);
 
   let open = false;
   try { open = localStorage.getItem(LS_KEY) === "1"; } catch (e) { /* 隐私模式 */ }
@@ -83,7 +90,7 @@ function attach(ime, textarea, opts) {
     ".vkb-low{flex:0.8}" +   /* 功能排：80% 高 */
     ".vkb-key{flex:1;background:#fdfdfd;border-radius:6px;box-shadow:0 1px 0 rgba(0,0,0,.35);" +
       "display:flex;align-items:center;justify-content:center;position:relative;" +
-      "color:#111;font-size:16px;cursor:pointer;min-width:0;overflow:hidden}" +
+      "color:#111;font-size:20px;cursor:pointer;min-width:0;overflow:hidden}" +   /* 主字母 */
     ".vkb-key:active{background:#aab2bd}" +
     ".vkb-fcell{flex:none;width:clamp(30px,7.5%,52px);background:#b9c0ca;font-size:11px}" +
     ".vkb-char{font-size:14px}" +
@@ -93,9 +100,9 @@ function attach(ime, textarea, opts) {
     ".vkb-armed{background:#4a90d9;color:#fff}" +
     ".vkb-armed .vkb-sub{color:#dce9f7}" +
     ".vkb-sub{position:absolute;top:1px;right:3px;font-size:8px;color:#777}" +
-    ".vkb-fin{position:absolute;right:2px;bottom:1px;font-size:7.5px;line-height:1.15;" +
+    ".vkb-fin{position:absolute;right:2px;bottom:1px;font-size:9.5px;line-height:1.15;" +
       "color:#6dbf73;text-align:right;white-space:pre}" +
-    ".vkb-sp{position:absolute;left:2px;top:1px;font-size:7px;color:#9aa}" +
+    ".vkb-sp{position:absolute;left:2px;top:1px;font-size:8.5px;color:#9aa}" +
     ".vkb-dot{font-size:16px}" +
     ".vkb-loupe{position:fixed;z-index:10002;width:180px;height:84px;border-radius:12px;" +
       "background:#fff;border:1px solid #bbb;box-shadow:0 4px 18px rgba(0,0,0,.25);" +
@@ -487,13 +494,16 @@ function attach(ime, textarea, opts) {
   function applyTextarea() {
     if (destroyed) return;
     syncBodyWidth();
-    textarea.style.paddingBottom = (basePadBottom + panel.offsetHeight) + "px";
+    if (cfg.padContent) {
+      textarea.style.paddingBottom = (basePadBottom + panel.offsetHeight) + "px";
+    }
     if (cfg.coarse) {
       textarea.readOnly = true;              // 屏蔽系统键盘（iOS/Android 都吃 readonly）
       ime.setOption({ touchCaret: true });   // readonly 下无原生光标，改自绘细光标
     }
     textarea.focus();
     window.dispatchEvent(new Event("resize"));   // 触发编辑器行号/高亮/光标刷新
+    cfg.onToggle(true, panel.offsetHeight);
   }
   function unapplyTextarea() {
     textarea.style.paddingBottom = "";
@@ -502,6 +512,7 @@ function attach(ime, textarea, opts) {
       ime.setOption({ touchCaret: false });
     }
     window.dispatchEvent(new Event("resize"));
+    cfg.onToggle(false, 0);
   }
   function openKb() {
     if (open) return;
@@ -540,7 +551,10 @@ function attach(ime, textarea, opts) {
   function onResize() {
     if (enabled && open) {
       syncBodyWidth();
-      textarea.style.paddingBottom = (basePadBottom + panel.offsetHeight) + "px";
+      if (cfg.padContent) {
+        textarea.style.paddingBottom = (basePadBottom + panel.offsetHeight) + "px";
+      }
+      cfg.onToggle(true, panel.offsetHeight);   // 键盘高随 vh 变，页面同步收底
     }
   }
   window.addEventListener("resize", onResize);

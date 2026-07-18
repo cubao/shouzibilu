@@ -288,6 +288,24 @@ const PORT = process.env.E2E_PORT || 8971;
   await page.keyboard.press("Shift+Comma");    // <<
   check("<< 反缩进", (await value()) === "ab", await value());
 
+  // J / gJ：合并行
+  await setDoc("aa\nbb\ncc", 0);
+  await page.keyboard.press("Shift+j");   // J：下一行并上来，补一个空格
+  check("J 合并行（补空格）", (await value()) === "aa bb\ncc", await value());
+  check("J 后光标在拼接处", (await curPos()) === 2, String(await curPos()));
+  await setDoc("aa\n  bb", 0);
+  await page.keyboard.press("Shift+j");
+  check("J 去下一行前导空白", (await value()) === "aa bb", await value());
+  await setDoc("aa\nbb", 4);
+  await page.keyboard.press("Shift+j");   // 末行无下一行
+  check("末行 J 无操作", (await value()) === "aa\nbb", await value());
+  await setDoc("aa\nbb\ncc", 0);
+  await page.keyboard.press("g");
+  await page.keyboard.press("Shift+j");   // gJ：不补空格
+  check("gJ 合并行（不补空格）", (await value()) === "aabb\ncc", await value());
+  await page.keyboard.press("u");
+  check("u 撤销 gJ", (await value()) === "aa\nbb\ncc", await value());
+
   // 搜索往返后 undo 仍正常（快照标记复位）
   await setDoc("你好世界你好", 0);
   await page.keyboard.press("/");
@@ -509,10 +527,24 @@ const PORT = process.env.E2E_PORT || 8971;
   check("开档显示上拉手柄", await page.isVisible(".vkb-handle"));
   await page.click(".vkb-handle");
   check("点手柄展开键盘", await page.isVisible(".vkb-panel"));
-  await page.waitForTimeout(120);   // padding 在 rAF 里应用
-  const padB = await page.evaluate(() =>
-    parseFloat(getComputedStyle(document.getElementById("editor")).paddingBottom));
-  check("展开后文本区底部补 padding", padB > 100, String(padB));
+  await page.waitForTimeout(120);   // onToggle 在 rAF 里应用
+  const bodyPad = await page.evaluate(() =>
+    parseFloat(getComputedStyle(document.body).paddingBottom));
+  check("展开后 body 收底（编辑器贴住键盘）", bodyPad > 100, String(bodyPad));
+  const abut = await page.evaluate(() => {
+    const t = document.getElementById("editor").getBoundingClientRect();
+    const p = document.querySelector(".vkb-panel").getBoundingClientRect();
+    return Math.abs(t.bottom - p.top);
+  });
+  check("textarea 底部与键盘贴合", abut < 3, String(abut));
+  const chromeHidden = await page.evaluate(() => ({
+    cls: document.body.classList.contains("vkb-open"),
+    bar: getComputedStyle(document.querySelector(".bar")).display,
+    h1: getComputedStyle(document.querySelector("h1")).display,
+  }));
+  check("展开时只留编辑区（标题/工具栏隐藏）",
+    chromeHidden.cls && chromeHidden.bar === "none" && chromeHidden.h1 === "none",
+    JSON.stringify(chromeHidden));
   check("桌面开档不设 readonly", await page.evaluate(() =>
     !document.getElementById("editor").readOnly));
   const kbAlign = await page.evaluate(() => {
@@ -649,9 +681,14 @@ const PORT = process.env.E2E_PORT || 8971;
   await vkTap("▽");
   check("▽ 收起键盘、手柄复现",
     !(await page.isVisible(".vkb-panel")) && await page.isVisible(".vkb-handle"));
-  const padB2 = await page.evaluate(() =>
-    parseFloat(getComputedStyle(document.getElementById("editor")).paddingBottom));
-  check("收起后 padding 还原", padB2 <= 13, String(padB2));
+  const afterClose = await page.evaluate(() => ({
+    pad: parseFloat(getComputedStyle(document.body).paddingBottom) || 0,
+    cls: document.body.classList.contains("vkb-open"),
+    bar: getComputedStyle(document.querySelector(".bar")).display,
+  }));
+  check("收起后收底还原、工具栏复现",
+    afterClose.pad <= 24 && !afterClose.cls && afterClose.bar !== "none",   // 24px = 样式表原值
+    JSON.stringify(afterClose));
   await page.keyboard.press("Escape");
   await setDoc("", 0);
 
