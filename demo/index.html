@@ -18,35 +18,95 @@
   #candidates span { margin-right: 12px; cursor: pointer; }
   #candidates span:hover { color: #4a90d9; }
   #candidates .idx { color: #999; font-size: 12px; }
+  #candidates .page { color: #999; font-size: 12px; margin-left: 8px; }
   #status { color: #999; font-size: 13px; margin-top: 16px; white-space: pre-wrap; }
+  #mode { display: inline-block; min-width: 2em; padding: 0 4px; border-radius: 3px;
+          background: #4a90d9; color: #fff; font-size: 12px; text-align: center; }
+  #mode.en { background: #888; }
 </style>
 </head>
 <body>
 <h1>手自笔录 · naive_pinyin</h1>
 <div class="bar">
+  <span id="mode">中</span>
   方案:
   <select id="scheme">
     <option value="ziranma">双拼 · 自然码</option>
     <option value="full">全拼</option>
   </select>
-  <label><input type="checkbox" id="fuzzy" checked> 模糊音 z/zh in/ing</label>
+  符号:
+  <select id="punct">
+    <option value="zh">中文符号</option>
+    <option value="en">英文符号</option>
+    <option value="tw">繁体符号</option>
+  </select>
+  <label><input type="checkbox" id="fuzzy" checked> 模糊音</label>
+  翻页:
+  <select id="paging">
+    <option value=",." selected>, .</option>
+    <option value="-=">- =</option>
+    <option value="[]">[ ]</option>
+    <option value="pg">仅 PgUp/PgDn</option>
+  </select>
 </div>
-<div id="editor" tabindex="0"></div>
+<div id="editor" tabindex="0" contenteditable="true"></div>
 <div id="candidates"></div>
 <div id="status">加载中…</div>
 
 <script src="../wasm/naive_pinyin.js"></script>
 <script>
+"use strict";
 const editor = document.getElementById("editor");
 const candBox = document.getElementById("candidates");
 const status = document.getElementById("status");
+const modeBadge = document.getElementById("mode");
 const schemeSel = document.getElementById("scheme");
+const punctSel = document.getElementById("punct");
 const fuzzyBox = document.getElementById("fuzzy");
+const pagingSel = document.getElementById("paging");
+
+const PAGE_SIZE = 9;
+const MAX_CANDIDATES = 50;
+
+// 标点映射: key -> [英文, 中文简体, 繁体]
+// 引号类特殊处理(成对交替), 用 "Q"/"q" 标记。
+const PUNCT = {
+  ",":  [",",  "，", "，"],
+  ".":  [".",  "。", "。"],
+  "<":  ["<",  "《", "《"],
+  ">":  [">",  "》", "》"],
+  "?":  ["?",  "？", "？"],
+  "!":  ["!",  "！", "！"],
+  ";":  [";",  "；", "；"],
+  ":":  [":",  "：", "："],
+  "(":  ["(",  "（", "（"],
+  ")":  [")",  "）", "）"],
+  "[":  ["[",  "【", "【"],
+  "]":  ["]",  "】", "】"],
+  "{":  ["{",  "｛", "｛"],
+  "}":  ["}",  "｝", "｝"],
+  "\\": ["\\", "、", "、"],
+  "|":  ["|",  "｜", "｜"],
+  "~":  ["~",  "～", "～"],
+  "^":  ["^",  "……", "……"],
+  "_":  ["_",  "——", "——"],
+  "`":  ["`",  "·", "·"],
+  "'":  ["'",  "Q",  "Q"],   // zh ‘’  tw 『』
+  "\"": ["\"", "q",  "q"],   // zh “”  tw 「」
+};
+const QUOTES = {
+  zh: { "'": ["‘", "’"], "\"": ["“", "”"] },
+  tw: { "'": ["『", "』"], "\"": ["「", "」"] },
+};
+const quoteOpen = { "'": true, "\"": true };
 
 let Module, dictData, ziranma;
 let engine = null;
-let composition = "";   // 字母缓冲
+let composition = "";
 let candidates = [];
+let page = 0;
+let englishMode = false;
+let shiftLone = false;
 
 async function boot() {
   Module = await createNaivePinyin();  // UMD 全局工厂
@@ -55,13 +115,14 @@ async function boot() {
     fetch("../wasm/ziranma.json").then(r => r.json()),
   ]);
   rebuildEngine();
-  status.textContent = `就绪。词典 ${(dictData.byteLength/1048576).toFixed(1)} MB。点击文本框输入。`;
+  status.textContent = `就绪。词典 ${(dictData.byteLength/1048576).toFixed(1)} MB。\n` +
+    "Shift 切换中英文 · 空格/数字选字 · 翻页键可配(默认 , .) · 标点键首选上屏 · Esc 清空 · 回车上屏字母";
   editor.focus();
 }
 
 function rebuildEngine() {
   if (engine) Module.ccall("np_destroy", null, ["number"], [engine]);
-  const config = { max_candidates: 9 };
+  const config = { max_candidates: MAX_CANDIDATES };
   if (schemeSel.value === "ziranma") config.shuangpin = ziranma.shuangpin;
   if (fuzzyBox.checked) config.fuzzy = [["z","zh"],["c","ch"],["s","sh"],["in","ing"],["en","eng"]];
   engine = Module.ccall("np_create", "number", ["string"], [JSON.stringify(config)]);
@@ -70,24 +131,68 @@ function rebuildEngine() {
   Module.ccall("np_load_dict", "number", ["number","number","number"], [engine, ptr, dictData.byteLength]);
   Module._free(ptr);
   composition = "";
+  page = 0;
   render();
 }
 
 function query() {
-  if (!composition) { candidates = []; return; }
+  if (!composition) { candidates = []; page = 0; return; }
   const s = Module.ccall("np_query", "string", ["number","string"], [engine, composition]);
   const r = JSON.parse(s);
   candidates = r.candidates || [];
 }
 
+function insertText(text) {
+  const compNode = editor.querySelector(".composition");
+  if (compNode) compNode.remove();
+  placeCaretAtEnd();
+  // contenteditable 下在光标处插入(回车换行后的新行内也能正确落位)
+  if (!document.execCommand("insertText", false, text)) {
+    editor.appendChild(document.createTextNode(text));
+    placeCaretAtEnd();
+  }
+}
+
 function commitText(text, consumed) {
   // 提交文本, 未消耗的字母留在缓冲里
   const rest = composition.slice(consumed).replace(/^'+/, "");
-  const compNode = editor.querySelector(".composition");
-  if (compNode) compNode.remove();
-  editor.appendChild(document.createTextNode(text));
+  insertText(text);
   composition = rest;
+  page = 0;
   render();
+}
+
+function commitRawComposition() {
+  const raw = composition;
+  composition = "";
+  page = 0;
+  insertText(raw);
+  render();
+}
+
+function commitBestThenPunct(punct) {
+  if (composition) {
+    if (candidates.length) commitText(candidates[0].text, candidates[0].consumed);
+    else commitRawComposition();
+  }
+  insertText(punct);
+  render();
+}
+
+function mapPunct(key) {
+  const style = punctSel.value;
+  if (style === "en") return key;
+  const entry = PUNCT[key];
+  if (!entry) return key;  // @ # $ % & * + = / 等原样
+  const idx = style === "zh" ? 1 : 2;
+  const mapped = entry[idx];
+  if (mapped === "Q" || mapped === "q") {
+    const pair = QUOTES[style][key];
+    const out = quoteOpen[key] ? pair[0] : pair[1];
+    quoteOpen[key] = !quoteOpen[key];
+    return out;
+  }
+  return mapped;
 }
 
 function render() {
@@ -101,12 +206,21 @@ function render() {
   }
   query();
   candBox.innerHTML = "";
-  candidates.forEach((c, i) => {
+  const totalPages = Math.max(1, Math.ceil(candidates.length / PAGE_SIZE));
+  if (page >= totalPages) page = totalPages - 1;
+  const slice = candidates.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  slice.forEach((c, i) => {
     const span = document.createElement("span");
     span.innerHTML = `<span class="idx">${i + 1}</span>${c.text}`;
     span.onclick = () => commitText(c.text, c.consumed);
     candBox.appendChild(span);
   });
+  if (candidates.length > PAGE_SIZE) {
+    const p = document.createElement("span");
+    p.className = "page";
+    p.textContent = `${page + 1}/${totalPages}页`;
+    candBox.appendChild(p);
+  }
   placeCaretAtEnd();
 }
 
@@ -117,38 +231,105 @@ function placeCaretAtEnd() {
   sel.collapseToEnd();
 }
 
+function setMode(en) {
+  englishMode = en;
+  modeBadge.textContent = en ? "EN" : "中";
+  modeBadge.className = en ? "en" : "";
+  if (en) { composition = ""; page = 0; render(); }
+}
+
 editor.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const key = e.key;
+
+  // Shift 单击切换中英文(等 keyup 确认未组合其他键)
+  if (key === "Shift") { shiftLone = true; return; }
+  shiftLone = false;
+
+  if (englishMode) return;  // 英文模式全部走默认
+
   if (/^[a-z]$/.test(key)) {
     composition += key;
+    page = 0;
     render();
-  } else if (key === "'" ) {
-    composition += "'";
-    render();
-  } else if (key === "Backspace") {
+  } else if (key === "'") {
+    // 有字母缓冲时是音节分隔符, 否则是引号
     if (composition) {
-      composition = composition.slice(0, -1);
+      composition += "'";
       render();
-    } // 无缓冲时走默认删除
-    else return;
-  } else if (key === " " || /^[1-9]$/.test(key)) {
-    const idx = key === " " ? 0 : parseInt(key, 10) - 1;
-    if (candidates[idx]) commitText(candidates[idx].text, candidates[idx].consumed);
+    } else {
+      insertText(mapPunct("'"));
+      render();
+    }
+  } else if (key === "Backspace") {
+    if (!composition) return;  // 默认删除
+    composition = composition.slice(0, -1);
+    page = 0;
+    render();
+  } else if (key === " ") {
+    if (!composition) return;  // 默认空格
+    if (candidates.length) commitText(candidates[0].text, candidates[0].consumed);
+    else commitRawComposition();
+  } else if (/^[1-9]$/.test(key)) {
+    const idx = page * PAGE_SIZE + parseInt(key, 10) - 1;
+    if (!composition) return;  // 默认数字
+    if (candidates[idx]) {
+      commitText(candidates[idx].text, candidates[idx].consumed);
+    } else {
+      commitRawComposition();  // 无此候选: 字母原样上屏, 数字走默认? 吞掉太怪, 也上屏
+      insertText(key);
+      render();
+    }
+  } else if (composition && isPagingKey(key)) {
+    const totalPages = Math.max(1, Math.ceil(candidates.length / PAGE_SIZE));
+    page = (page + (isPagingNext(key) ? 1 : -1) + totalPages) % totalPages;
+    render();
   } else if (key === "Escape") {
+    if (!composition) return;
     composition = "";
+    page = 0;
     render();
   } else if (key === "Enter") {
-    if (composition) commitText(composition, composition.length);
-    else return;
+    if (!composition) return;  // 默认换行
+    commitRawComposition();
+  } else if (key.length === 1 && !/[a-zA-Z0-9]/.test(key)) {
+    // 标点键: 有候选则首选上屏再出标点
+    commitBestThenPunct(mapPunct(key));
   } else {
-    return;  // 其他键(标点/方向键)走默认
+    return;  // 方向键等走默认
   }
   e.preventDefault();
 });
 
+document.addEventListener("keyup", (e) => {
+  if (e.key === "Shift" && shiftLone) {
+    shiftLone = false;
+    setMode(!englishMode);
+  }
+});
+
+// 翻页键配置
+function pagingKeys() {
+  const v = pagingSel.value;
+  if (v === "pg") return null;
+  return { prev: v[0], next: v[1] };
+}
+function isPagingKey(key) {
+  if (key === "PageUp" || key === "PageDown") return true;
+  const pk = pagingKeys();
+  return pk && (key === pk.prev || key === pk.next);
+}
+function isPagingNext(key) {
+  if (key === "PageDown") return true;
+  if (key === "PageUp") return false;
+  const pk = pagingKeys();
+  return pk && key === pk.next;
+}
+
 schemeSel.onchange = rebuildEngine;
 fuzzyBox.onchange = rebuildEngine;
+punctSel.onchange = () => editor.focus();
+pagingSel.onchange = () => editor.focus();
 
 boot().catch(e => { status.textContent = "加载失败: " + e; });
 </script>

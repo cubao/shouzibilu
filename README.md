@@ -92,6 +92,19 @@ make dict cli
 ./build/native/cli data/naive_pinyin.dict.txt '{"fuzzy":[["z","zh"],["in","ing"]]}'
 ```
 
+浏览器 demo（`make demo` 后打开 http://localhost:8000/demo/）按键：
+
+| 键 | 行为 |
+|---|---|
+| 字母 / `'` | 组成编码（`'` 为音节分隔；无缓冲时是引号） |
+| 空格 / 数字 1-9 | 选字（无候选时字母原样上屏） |
+| 翻页键（可配，默认 `,` `.`，备选 `-` `=` / `[` `]` / PgUp/PgDn） | 候选翻页（每页 9 个，共 50 候选） |
+| 标点键 | 首选上屏并出标点（三种符号风格可选：英文/中文/繁体） |
+| Shift 单击 | 中/英文模式切换 |
+| Backspace | 删缓冲字母（无缓冲时默认删除） |
+| Enter | 字母原样上屏（无缓冲时默认换行） |
+| Esc | 清空缓冲 |
+
 ## 设计原则
 
 1. 尽量只用 STL；外部依赖一律 header-only 且拷入 `third_party/`

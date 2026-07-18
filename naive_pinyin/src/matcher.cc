@@ -168,11 +168,16 @@ std::vector<MatchCandidate> Matcher::Match(const std::string& input) const {
   };
 
   // ---- 候选生成：枚举首词 × 最优补全 ----
-  static constexpr size_t kTopEntriesPerEdge = 3;
+  // 首词即全程(单字/单词查询)时放开到 max_candidates；
+  // 否则取前 3，保证整句候选的多样性。
+  static constexpr size_t kTopEntriesPerPartialEdge = 3;
   for (const WordEdge& e : word_edges_from(0)) {
     if (bwd[e.end] == kNegInf) continue;
     const std::string completion = reconstruct(e.end);
-    size_t k = std::min(kTopEntriesPerEdge, e.entries->size());
+    const bool full = (e.end == m);
+    size_t k = full ? std::min(static_cast<size_t>(max_candidates_),
+                               e.entries->size())
+                    : std::min(kTopEntriesPerPartialEdge, e.entries->size());
     for (size_t t = 0; t < k; ++t) {
       const DictEntry& entry = (*e.entries)[t];
       double total = entry.score - segment_penalty_ + bwd[e.end];

@@ -114,3 +114,15 @@ TEST(matcher, respects_max_candidates) {
   auto cands = MakeMatcher({}, 2).Match("nihaoshijie");
   ASSERT(cands.size() <= 2u);
 }
+
+TEST(matcher, single_syllable_yields_many_candidates) {
+  // 单音节查询应给出该音节的全部候选(不受首词边前 3 限制)
+  Dict d;
+  const char* text = "hao\t好:900,号:850,毫:800,耗:750,浩:700,豪:650,郝:600\n";
+  d.Load(text, std::strlen(text));
+  Matcher matcher(d, {}, 10, 1100);
+  auto cands = matcher.Match("hao");
+  ASSERT_EQ(cands.size(), 7u);
+  ASSERT_EQ(cands[0].text, "好");
+  ASSERT_EQ(cands[6].text, "郝");
+}

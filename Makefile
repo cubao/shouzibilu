@@ -80,10 +80,9 @@ $(WASM_OUT): $(LIB_SRCS) $(NP_DIR)/src/*.h $(NP_DIR)/include/naive_pinyin/*.h Ma
 smoke: wasm
 	node wasm/smoke_test.js
 
-# 浏览器 demo（从仓库根目录起服务，demo 引用 ../wasm ../data）
+# 浏览器 demo（从仓库根目录起服务，demo 引用 ../wasm ../data；no-store 禁缓存）
 demo: $(WASM_OUT) $(DICT_OUT) $(WASM_DIR)/ziranma.json
-	@echo "打开 http://localhost:8000/demo/"
-	python3 -m http.server 8000
+	python3 tools/serve.py 8000
 
 # ---- 词典 ----
 dict: $(DICT_OUT)
