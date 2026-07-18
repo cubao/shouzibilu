@@ -98,7 +98,7 @@ def parse_rime_dict(path, entries, stats, require_pinyin=True):
 
 
 def normalize(weights, scale=1000):
-    """{(key,word): weight} -> {(key,word): int_score}，log10 归一化到 [0, scale]。"""
+    """{k: weight} -> {k: int_score}，log10 归一化到 [0, scale]。"""
     if not weights:
         return {}
     max_w = max(weights.values())
@@ -107,6 +107,20 @@ def normalize(weights, scale=1000):
         denom = 1.0
     return {k: int(round(scale * math.log10(w + 1.0) / denom))
             for k, w in weights.items()}
+
+
+def parse_jieba(path):
+    """jieba dict.txt: `词 频率 词性` 每行 -> {词: 频率}（词性忽略）。"""
+    freqs = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) >= 2:
+                try:
+                    freqs[parts[0]] = float(parts[1])
+                except ValueError:
+                    pass
+    return freqs
 
 
 def main():
@@ -120,6 +134,10 @@ def main():
     ap.add_argument("--min-weight", default="2:500,3:3000,4:3000,5:5000",
                     help="按音节数分档的原始权重下限，最后一档适用于更长词。"
                          "单字不受限。默认 2:500,3:3000,4:3000,5:5000")
+    ap.add_argument("--jieba", default=None,
+                    help="jieba dict.txt 路径；提供时与 rime-ice 权重 blend")
+    ap.add_argument("--jieba-alpha", type=float, default=0.5,
+                    help="blend 权重：final = α*rime + (1-α)*jieba（默认 0.5）")
     args = ap.parse_args()
 
     # 解析分档权重下限
@@ -156,6 +174,21 @@ def main():
     print(f"权重裁剪: {len(word_entries_all)} -> {len(word_entries)} 条",
           file=sys.stderr)
     word_scores = normalize(word_entries)
+
+    # 2.5 jieba 频率 blend（仅多字词；单字保持 8105 字频）
+    if args.jieba:
+        jieba_freqs = parse_jieba(args.jieba)
+        jieba_norm = normalize(jieba_freqs)
+        alpha = args.jieba_alpha
+        hits = 0
+        for (key, word), rime_score in list(word_scores.items()):
+            js = jieba_norm.get(word)
+            if js is not None:
+                word_scores[(key, word)] = int(
+                    round(alpha * rime_score + (1 - alpha) * js))
+                hits += 1
+        print(f"jieba blend: {hits}/{len(word_scores)} 词命中"
+              f" (α={alpha})", file=sys.stderr)
 
     # 3. 合并：key -> [(word, score)]
     table = defaultdict(list)

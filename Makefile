@@ -35,6 +35,7 @@ WASM_OUT := $(WASM_DIR)/naive_pinyin.js
 # 词典工具
 DICT_OUT   := data/naive_pinyin.dict.txt
 RIME_ICE   := ../rime-ice
+JIEBA_DICT := data/jieba_dict.txt
 
 .PHONY: all native test wasm smoke dict clean
 
@@ -58,6 +59,10 @@ $(RUN_TESTS): $(LIB_OBJS) $(TEST_OBJS)
 
 test: $(RUN_TESTS)
 	./$(RUN_TESTS)
+
+# 排序质量回归（依赖词典与 cli）
+regression: $(CLI) $(DICT_OUT)
+	python3 tools/regression.py --cli $(CLI) --dict $(DICT_OUT) -v
 
 cli: $(CLI)
 
@@ -87,9 +92,13 @@ demo: $(WASM_OUT) $(DICT_OUT) $(WASM_DIR)/ziranma.json
 # ---- 词典 ----
 dict: $(DICT_OUT)
 
-$(DICT_OUT): tools/build_dict.py
+$(JIEBA_DICT):
+	curl -sL -o $@ https://raw.githubusercontent.com/fxsjy/jieba/master/jieba/dict.txt
+
+$(DICT_OUT): tools/build_dict.py $(JIEBA_DICT)
 	python3 tools/build_dict.py \
 	  --rime-ice $(RIME_ICE) \
+	  --jieba $(JIEBA_DICT) \
 	  --out $@
 
 # 自然码双拼默认配置（前端作为默认 shuangpin map）
