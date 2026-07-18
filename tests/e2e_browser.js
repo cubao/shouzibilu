@@ -396,6 +396,65 @@ const PORT = process.env.E2E_PORT || 8971;
   await page.keyboard.press("Shift");
   await page.keyboard.press("Escape");
 
+  // ---------- 12. A / I / r / block 光标 blend / 持久化 ----------
+  // A：行尾插入
+  await setDoc("hello\nworld", 1);
+  await page.keyboard.press("Shift+A");
+  check("A 跳行尾进 INSERT", (await curPos()) === 5 && (await badge()) === "中",
+        (await curPos()) + "|" + await badge());
+  await page.keyboard.press("Escape");
+
+  // I：首个非空白插入
+  await setDoc("  hello", 5);
+  await page.keyboard.press("Shift+I");
+  check("I 跳 ^ 进 INSERT", (await curPos()) === 2 && (await badge()) === "中",
+        (await curPos()) + "|" + await badge());
+  await page.keyboard.press("Escape");
+
+  // r<char>：替换单字符，留 NORMAL
+  await setDoc("abc", 1);
+  await page.keyboard.press("r");
+  await page.keyboard.press("x");
+  check("r 替换单字符", (await value()) === "axc" && (await badge()) === "NORMAL",
+        (await value()) + "|" + await badge());
+  check("r 后光标不动", (await curPos()) === 1, String(await curPos()));
+  await page.keyboard.press("u");
+  check("u 撤销 r", (await value()) === "abc", await value());
+
+  // r<Enter>：拆行
+  await setDoc("abc", 1);
+  await page.keyboard.press("r");
+  await page.keyboard.press("Enter");
+  check("r<Enter> 拆行", (await value()) === "a\nc", await value());
+
+  // r 在换行符上：拒绝
+  await setDoc("a\nb", 1);
+  await page.keyboard.press("r");
+  await page.keyboard.press("x");
+  check("r 在 \\n 上无操作", (await value()) === "a\nb", await value());
+
+  const blend = await page.evaluate(() => {
+    const b = document.querySelector(".ime-block-caret");
+    return { bm: b.style.mixBlendMode, text: b.textContent };
+  });
+  check("block 光标是 difference 混合、无文本重绘",
+        blend.bm === "difference" && blend.text === "");
+
+  // 持久化：写内容 + 改映射草稿 → pagehide → 重载恢复
+  await setDoc("持久化测试内容", 0);
+  await page.evaluate(() => {
+    document.getElementById("mappings").value = '{",draft-test": "✍"}';
+    window.dispatchEvent(new Event("pagehide"));
+  });
+  await page.reload({ waitUntil: "load" });
+  await page.waitForFunction(() =>
+    document.getElementById("status").textContent.includes("词典"), { timeout: 30000 });
+  check("重载后编辑器内容恢复", (await value()) === "持久化测试内容", await value());
+  const taVal = await page.inputValue("#mappings");
+  check("重载后映射草稿恢复", taVal.includes("draft-test"), taVal);
+  await setDoc("", 0);
+  await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+
   await browser.close();
   server.kill();
   console.log("----");

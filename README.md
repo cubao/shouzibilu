@@ -150,11 +150,17 @@ make dict cli
 **普通模式**（精简 vim）：`h j k l` `0 ^ $` `w b e`（每汉字一词）`gg G` `%`
 `f F t T` `/ ?`+`n N`；operator `d c y >`（`dd cc yy >> <<`），text object
 `iw aw`、引号（含中文弯引号）、括号（含（）【】《》「」）；`x p P u`；
-`i a o O` 进插入。Normal 模式显示 block 块光标（原生细光标隐藏）。
+`r<char>` 替换单字符（`r<Enter>` 拆行）；`i a A I o O` 进插入。
+Normal 模式显示 block 块光标（`mix-blend-mode: difference` 反色块，
+字符仍由 textarea 渲染，字号字高不变）。
 搜索遵循当前中/英状态：中文态可打拼音出候选选词，英文态字面输入；
 incsearch 实时跳转 + 全文高亮（当前命中橙色），接受后高亮保留（`n`/`N` 导航），
 Normal 下 Esc 清除高亮；搜索中 Esc 取消并还原光标。Esc 别名：`Ctrl+[`、`Ctrl+C`。
 明确不做：`.`、Visual、宏、正则、计数。
+
+**界面与持久化**：编辑器用等宽字体（Maple Mono NF CN web font，离线时
+退化为本地合成的 Menlo+PingFang 等宽）；编辑器内容与动态词映射草稿
+每 10s 写入 localStorage（页面隐藏时冲刷），刷新不丢。
 
 **已知边界**：OS 级中文输入法激活时按键会被系统吞掉，网页无法压制——
 请把 OS 输入源切到英文状态使用；physical 模式屏蔽的是键盘布局，不是 OS 输入法。

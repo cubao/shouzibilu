@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>手自笔录 (shǒuzìbǐlù)</title>
 <style>
+  @import url("https://fontsapi.zeoseven.com/442/main/result.css");
   body { font-family: -apple-system, "PingFang SC", sans-serif; max-width: 800px; margin: 40px auto; padding: 0 16px; }
   h1 { font-size: 20px; }
   .bar { margin: 12px 0; color: #666; font-size: 14px; line-height: 2; }
@@ -13,6 +14,8 @@
     width: 100%; box-sizing: border-box;
     min-height: 240px; font-size: 18px; line-height: 1.8; outline: none;
     resize: vertical; tab-size: 4;
+    /* 等宽字体链：Maple Mono NF CN（web font，1:2），离线退化到 ime-mono 合成 */
+    font-family: "Maple Mono NF CN", "ime-mono", Menlo, monospace;
   }
   #editor:focus { border-color: #4a90d9; }
   #mode { display: inline-block; min-width: 4em; padding: 0 6px; border-radius: 3px;
@@ -102,6 +105,8 @@ const mappingsMsg = document.getElementById("mappingsMsg");
 const LS_FREQ = "naive_pinyin.user_freq";
 const LS_SETTINGS = "shouzibilu.settings";
 const LS_MAPPINGS = "shouzibilu.mappings";
+const LS_CONTENT = "shouzibilu.content";
+const LS_MAPPINGS_DRAFT = "shouzibilu.mappings_draft";
 
 let Module, dictData, ziranma;
 let engineCtx = null;
@@ -128,8 +133,36 @@ function loadMappings() {
   return ImeEditor.DEFAULT_MAPPINGS;
 }
 
+// ---------- 等宽字体合成（Maple Mono web font 加载失败时的离线先底） ----------
+// 用 @font-face 拼一个：Menlo 只接 ASCII，size-adjust 把 advance 压到 0.5em；
+// PingFang SC 汉字天然全宽 1em。运行时实测 Menlo advance，跨机器稳健。
+// 注意：src:local() 必须用 PostScript 名（带空格的家族名会 error）。
+function setupMonoFont() {
+  const cv = document.createElement("canvas").getContext("2d");
+  cv.font = "100px Menlo";
+  const adv = cv.measureText("0").width / 100;   // 单位 em
+  if (!(adv > 0.3 && adv < 1)) return;           // Menlo 不存在就放弃
+  const adjust = (0.5 / adv * 100).toFixed(2);
+  const st = document.createElement("style");
+  // 注意：src:local() 必须用 PostScript 名（带空格的家族名会 error）
+  st.textContent =
+    `@font-face{font-family:'ime-mono';src:local('Menlo-Regular');` +
+    `unicode-range:U+0020-007E;size-adjust:${adjust}%}` +
+    `@font-face{font-family:'ime-mono';src:local('PingFangSC-Regular');` +
+    `unicode-range:U+2E80-9FFF,U+3000-303F,U+FF00-FFEF,` +
+    `U+2018,U+2019,U+201C,U+201D,U+2026,U+2014;}`;
+  document.head.appendChild(st);
+}
+
+// ---------- 内容持久化（10s 定时 + 页面隐藏时冲刷） ----------
+function persistAll() {
+  localStorage.setItem(LS_CONTENT, editor.value);
+  localStorage.setItem(LS_MAPPINGS_DRAFT, mappingsTa.value);
+}
+
 // ---------- 引擎 ----------
 async function boot() {
+  setupMonoFont();
   Module = await createNaivePinyin();
   [dictData, ziranma] = await Promise.all([
     fetch("data/naive_pinyin.dict.txt").then(r => r.arrayBuffer()),
@@ -147,8 +180,13 @@ async function boot() {
   if (s.paging) pagingSel.value = s.paging;
 
   rebuildEngine();
+  // 恢复上次内容与映射草稿
+  editor.value = localStorage.getItem(LS_CONTENT) || "";
+  const draft = localStorage.getItem(LS_MAPPINGS_DRAFT);
+  mappingsTa.value = draft != null ? draft : JSON.stringify(loadMappings(), null, 2);
   attachEditor();
-  mappingsTa.value = JSON.stringify(loadMappings(), null, 2);
+  setInterval(persistAll, 10000);
+  window.addEventListener("pagehide", persistAll);
   editor.focus();
 }
 

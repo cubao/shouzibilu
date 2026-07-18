@@ -332,6 +332,7 @@ function attach(textarea, opts) {
   let pendingIA = null;           // 'i' | 'a'（text object 修饰）
   let pendingG = false;           // gg
   let pendingFind = null;         // {op, key:'f'|'F'|'t'|'T'}
+  let pendingR = false;           // r<char> 等待替换字符
   let register = { text: "", linewise: false };
   let undoStack = [];             // [{value, cursor}]
   let lastSearch = null;          // {pat, dir}
@@ -381,13 +382,13 @@ function attach(textarea, opts) {
   textarea.style.background = "transparent";
   textarea.style.position = "relative";
 
-  // NORMAL 模式的 block 光标（vim 风格反色块）
+  // NORMAL 模式的 block 光标（difference 混合反色块：字符仍由 textarea 渲染，
+  // 字号/字高零变化，只是背景/前景反相）
   const blockCaret = document.createElement("div");
   blockCaret.className = "ime-block-caret";
   blockCaret.style.cssText =
-    "position:fixed;display:none;z-index:9998;pointer-events:none;background:#333;" +
-    "color:#fff;opacity:0.85;border-radius:2px;align-items:center;justify-content:center;" +
-    "overflow:hidden;";
+    "position:fixed;display:none;z-index:9998;pointer-events:none;background:#fff;" +
+    "mix-blend-mode:difference;border-radius:2px;";
   document.body.appendChild(blockCaret);
 
   function caretPixel(markerCh) {
@@ -459,18 +460,13 @@ function attach(textarea, opts) {
       return;
     }
     const v = val(), p = cur();
-    const ch = p < v.length && v[p] !== "\n" ? v[p] : " ";
-    const cs = getComputedStyle(textarea);
-    blockCaret.style.fontFamily = cs.fontFamily;
-    blockCaret.style.fontSize = cs.fontSize;
-    const px = caretPixel(ch);
-    blockCaret.textContent = ch;
+    const ch = p < v.length && v[p] !== "\n" ? v[p] : " ";
+    const px = caretPixel(ch);   // 只量宽度；字形由 textarea 自己画
     blockCaret.style.left = px.x + "px";
     blockCaret.style.top = px.y + "px";
     blockCaret.style.width = Math.max(px.width, 4) + "px";
     blockCaret.style.height = px.lineHeight + "px";
-    blockCaret.style.lineHeight = px.lineHeight + "px";
-    blockCaret.style.display = "flex";
+    blockCaret.style.display = "block";
   }
 
   function showPopup(html) {
@@ -1058,8 +1054,23 @@ function attach(textarea, opts) {
     }
 
     if (key === "Escape") {
-      pendingOp = null; pendingIA = null; pendingG = false;
+      pendingOp = null; pendingIA = null; pendingG = false; pendingR = false;
       if (hlActive) { hlActive = false; refreshHighlights(); }   // Esc = :noh
+      return true;
+    }
+
+    // r<char>：替换光标处字符（Enter = 拆行），留在 NORMAL
+    if (pendingR) {
+      pendingR = false;
+      const v = val(), p = cur();
+      if (p >= v.length || v[p] === "\n") return true;   // 空行/EOF 拒绝
+      let rep = null;
+      if (key === "Enter") rep = "\n";
+      else {
+        const c = resolveChar(e);
+        if (c != null && c.length === 1) rep = c;
+      }
+      if (rep != null) applyText(v.slice(0, p) + rep + v.slice(p + 1), p);
       return true;
     }
 
@@ -1149,6 +1160,9 @@ function attach(textarea, opts) {
       }
       case "i": setMode("INSERT"); return true;
       case "a": setCur(Math.min(cur() + 1, val().length)); setMode("INSERT"); return true;
+      case "A": setCur(lineEnd(val(), cur())); setMode("INSERT"); return true;
+      case "I": setCur(firstNonBlank(val(), cur())); setMode("INSERT"); return true;
+      case "r": pendingR = true; return true;
       case "o": {
         const le = lineEnd(val(), cur());
         applyText(val().slice(0, le) + "\n" + val().slice(le), le + 1);
@@ -1281,7 +1295,8 @@ function attach(textarea, opts) {
           refreshSegment(); refreshCandidates(); render();
         } else if (cfg.vim) { leaveInsert(); setMode("NORMAL"); }
       } else {
-        pendingOp = null; pendingIA = null; pendingG = false; pendingFind = null;
+        pendingOp = null; pendingIA = null; pendingG = false;
+        pendingFind = null; pendingR = false;
         if (hlActive) { hlActive = false; refreshHighlights(); }
       }
       return;
