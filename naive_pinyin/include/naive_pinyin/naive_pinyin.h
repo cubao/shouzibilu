@@ -36,6 +36,13 @@ class Engine {
   // 例如 [{"text":"你好","weight":100.0,"consumed":5}, ...]
   // 输入含非法字符时返回带 "error" 字段的 JSON 对象。
   virtual std::string Query(const std::string& input) const = 0;
+
+  // 返回输入字母串的音节边界（组词光标站位），JSON 形如
+  // {"input":"wodedkdp","boundaries":[0,2,4,6,8]}。
+  // 边界 = 从起点 0 经音节边可达的所有位置，外加末尾（半截音节
+  // 不算边界，但末尾本身永远是一站）。apostrophe 是硬边界。
+  // 输入含非法字符时返回带 "error" 字段的 JSON 对象。
+  virtual std::string Segment(const std::string& input) const = 0;
 };
 
 }  // namespace naive_pinyin

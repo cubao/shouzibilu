@@ -114,6 +114,16 @@ async function main() {
   check("np_dump_user 导出自造词",
         dumpJson.some(e => e.word === "唐志雄" && e.pinyin === "tang zhi xiong"));
 
+  // np_segment: 全拼 DAG 全边界 + 双拼恒 2 键
+  const seg1 = JSON.parse(Module.ccall("np_segment", "string",
+                                       ["number", "string"], [ctxFull, "fangan"]));
+  check("np_segment 全拼 DAG 全边界",
+        JSON.stringify(seg1.boundaries) === "[0,2,3,4,5,6]");
+  const seg2 = JSON.parse(Module.ccall("np_segment", "string",
+                                       ["number", "string"], [ctx, "wodedkdp"]));
+  check("np_segment 双拼恒 2 键一站",
+        JSON.stringify(seg2.boundaries) === "[0,2,4,6,8]");
+
   Module.ccall("np_destroy", null, ["number"], [ctx]);
   Module.ccall("np_destroy", null, ["number"], [ctxFull]);
 

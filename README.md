@@ -15,6 +15,10 @@ AI 时代，留一个独立的中文输入环境，手写一点文字。
 - **整句输入**：自动音节切分 + DP 选最优路径
 - **模糊音**：可配置的模糊音对（zh/z、n/l、in/ing……）
 - **自定义词表**：JSON 配置追加用户词条
+- **动态词**：`,check` → ✅、`,date` → 今天日期，`,` 开头的纯映射（`eval:` 可执行 JS）
+- **组词光标**：方向键按音节边界（DAG 全边界）移动，逐段构词即学会新词
+- **精简 vim**：Normal/Insert/Search 三模式，operator × motion / text-object（可关）
+- **键盘布局无关**：物理键（e.code）+ 布局表（qwerty / dvorak / dvorak4tzx，JSON 可覆盖）
 - **词库**：雾凇拼音 [rime-ice](https://github.com/iDvel/rime-ice)（简体、现代词频）
   + [rime-essay](https://github.com/rime/rime-essay) 单字频率表，离线转成紧凑文本格式
 
@@ -25,6 +29,7 @@ AI 时代，留一个独立的中文输入环境，手写一点文字。
 
 ```
 index.html             浏览器 demo（仓库根，GitHub Pages 直接部署）
+ime-editor.js          IME 编辑器（键盘接管 / 候选弹窗 / 动态词 / vim）
 naive_pinyin/          C++17 库本体
   include/naive_pinyin/  对外头文件（C++ API + C API）
   src/                   实现
@@ -71,6 +76,7 @@ make dict     # 生成精简词典（依赖 ../rime-ice）
 make ziranma  # 生成自然码双拼默认配置 wasm/ziranma.json
 make wasm     # 编译 WebAssembly（先 source ../emsdk/emsdk_env.sh）
 make smoke    # node 冒烟测试 wasm 产物
+make e2e      # 浏览器端到端冒烟（需 playwright + Chromium，缺依赖自动 SKIP）
 make demo     # 起本地服务，打开 http://localhost:8000/
 make regression  # 排序质量回归（21 条断言）
 make npm      # 组装 npm 包到 npm/（@cubao/naive-pinyin）
@@ -121,18 +127,32 @@ make dict cli
 ./build/native/cli data/naive_pinyin.dict.txt '{"fuzzy":[["z","zh"],["in","ing"]]}'
 ```
 
-浏览器 demo（`make demo` 后打开 http://localhost:8000/demo/）按键：
+浏览器 demo（`make demo` 后打开 http://localhost:8000/）。编辑器是 textarea，
+键盘全部接管（vim 默认开，启动在 Normal；`i` 进入插入模式才激活输入法）。
+
+**插入模式**：
 
 | 键 | 行为 |
 |---|---|
-| 字母 / `'` | 组成编码（`'` 为音节分隔；无缓冲时是引号） |
+| 字母 / `'` | 组成编码（`'` 为音节分隔；无缓冲时 `,` 进动态词模式） |
 | 空格 / 数字 1-9 | 选字（无候选时字母原样上屏） |
-| 翻页键（可配，默认 `,` `.`，备选 `-` `=` / `[` `]` / PgUp/PgDn） | 候选翻页（每页 9 个，共 50 候选） |
-| 标点键 | 首选上屏并出标点（三种符号风格可选：英文/中文/繁体） |
-| Shift 单击 | 中/英文模式切换 |
-| Backspace | 删缓冲字母（无缓冲时默认删除） |
-| Enter | 字母原样上屏（无缓冲时默认换行） |
-| Esc | 清空缓冲 |
+| `←` `→` / `Home` `End` | 组词光标按音节边界移动（候选只查光标前前缀） |
+| 翻页键（可配，默认 `,` `.`） | 候选翻页（拼音缓冲内；空缓冲 `,` 是动态词） |
+| 标点键 | 首选上屏并出标点 |
+| Shift 单击 | 中/英文切换；Shift+字母 = 首选上屏 + 写大写字母 |
+| Backspace | 删光标前一字母；Enter 原样上屏；Esc 清缓冲（再按回 Normal） |
+
+**动态词**（`,` 开头，纯映射不学习）：`,check` → ✅、`,date` → 日期、
+`eval:` 值执行 JS。页面底部「动态词映射」可编辑整表（保存时 eval 条目需确认）。
+
+**普通模式**（精简 vim）：`h j k l` `0 ^ $` `w b e`（每汉字一词）`gg G` `%`
+`f F t T` `/ ?`+`n N`；operator `d c y >`（`dd cc yy >> <<`），text object
+`iw aw`、引号（含中文弯引号）、括号（含（）【】《》「」）；`x p P u`；
+`i a o O` 进插入。搜索行是迷你插入模式（可打拼音搜中文）。Esc 别名：
+`Ctrl+[`、`Ctrl+C`。明确不做：`.`、Visual、宏、正则、计数。
+
+**已知边界**：OS 级中文输入法激活时按键会被系统吞掉，网页无法压制——
+请把 OS 输入源切到英文状态使用；physical 模式屏蔽的是键盘布局，不是 OS 输入法。
 
 ## 设计原则
 

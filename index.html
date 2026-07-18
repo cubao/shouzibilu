@@ -6,45 +6,56 @@
 <style>
   body { font-family: -apple-system, "PingFang SC", sans-serif; max-width: 800px; margin: 40px auto; padding: 0 16px; }
   h1 { font-size: 20px; }
-  .bar { margin: 12px 0; color: #666; font-size: 14px; }
-  select { font-size: 14px; }
+  .bar { margin: 12px 0; color: #666; font-size: 14px; line-height: 2; }
+  select, button { font-size: 14px; }
   #editor {
     border: 1px solid #ccc; border-radius: 6px; padding: 12px;
-    min-height: 120px; font-size: 18px; line-height: 1.8; outline: none;
+    width: 100%; box-sizing: border-box;
+    min-height: 240px; font-size: 18px; line-height: 1.8; outline: none;
+    resize: vertical; tab-size: 4;
   }
   #editor:focus { border-color: #4a90d9; }
-  .composition { color: #4a90d9; text-decoration: underline; }
-  #candidates { margin-top: 8px; font-size: 16px; min-height: 28px; }
-  #candidates span { margin-right: 12px; cursor: pointer; }
-  #candidates span:hover { color: #4a90d9; }
-  #candidates .idx { color: #999; font-size: 12px; }
-  #candidates .page { color: #999; font-size: 12px; margin-left: 8px; }
-  #status { color: #999; font-size: 13px; margin-top: 16px; white-space: pre-wrap; }
-  #mode { display: inline-block; min-width: 2em; padding: 0 4px; border-radius: 3px;
+  #mode { display: inline-block; min-width: 4em; padding: 0 6px; border-radius: 3px;
           background: #4a90d9; color: #fff; font-size: 12px; text-align: center; }
+  #mode.normal { background: #2d8a4e; }
+  #mode.search { background: #b07500; }
   #mode.en { background: #888; }
+  #status { color: #999; font-size: 13px; margin-top: 16px; white-space: pre-wrap; }
+  details { margin-top: 12px; font-size: 14px; color: #666; }
+  #mappings {
+    width: 100%; box-sizing: border-box; min-height: 180px;
+    font: 13px/1.5 ui-monospace, Menlo, monospace; margin-top: 8px;
+  }
 </style>
 </head>
 <body>
 <h1>手自笔录 · naive_pinyin</h1>
 <div class="bar">
-  <span id="mode">中</span>
+  <span id="mode">…</span>
   方案:
   <select id="scheme">
     <option value="ziranma">双拼 · 自然码</option>
     <option value="full">全拼</option>
   </select>
+  布局:
+  <select id="layout">
+    <option value="qwerty">QWERTY</option>
+    <option value="dvorak">Dvorak</option>
+    <option value="dvorak4tzx" selected>Dvorak4TZX</option>
+  </select>
+  键盘:
+  <select id="keyMode">
+    <option value="physical" selected>物理键 (e.code)</option>
+    <option value="letter">字母 (e.key)</option>
+  </select>
+  <label><input type="checkbox" id="vim" checked> vim</label>
+  <label><input type="checkbox" id="fuzzy" checked> 模糊音</label>
   符号:
   <select id="punct">
     <option value="zh">中文符号</option>
     <option value="en">英文符号</option>
     <option value="tw">繁体符号</option>
   </select>
-  <label><input type="checkbox" id="fuzzy" checked> 模糊音</label>
-  <button id="exportBtn">导出</button>
-  <button id="importBtn">导入</button>
-  <button id="clearBtn">清空学习</button>
-  <input type="file" id="importFile" accept=".json" style="display:none">
   翻页:
   <select id="paging">
     <option value=",." selected>, .</option>
@@ -52,350 +63,219 @@
     <option value="[]">[ ]</option>
     <option value="pg">仅 PgUp/PgDn</option>
   </select>
+  <button id="exportBtn">导出</button>
+  <button id="importBtn">导入</button>
+  <button id="clearBtn">清空学习</button>
+  <input type="file" id="importFile" accept=".json" style="display:none">
 </div>
-<div id="editor" tabindex="0" contenteditable="true"></div>
-<div id="candidates"></div>
+<textarea id="editor" autocomplete="off" autocorrect="off" autocapitalize="off"
+          spellcheck="false" wrap="soft"></textarea>
+<details>
+  <summary>动态词映射（<code>,</code> 开头触发，<code>eval:</code> 执行 JS）</summary>
+  <textarea id="mappings" spellcheck="false"></textarea>
+  <div>
+    <button id="mappingsSave">保存</button>
+    <button id="mappingsReset">恢复默认</button>
+    <span id="mappingsMsg" style="color:#999;font-size:13px"></span>
+  </div>
+</details>
 <div id="status">加载中…</div>
 
 <script src="wasm/naive_pinyin.js"></script>
+<script src="ime-editor.js"></script>
 <script>
 "use strict";
 const editor = document.getElementById("editor");
-const candBox = document.getElementById("candidates");
 const status = document.getElementById("status");
 const modeBadge = document.getElementById("mode");
 const schemeSel = document.getElementById("scheme");
+const layoutSel = document.getElementById("layout");
+const keyModeSel = document.getElementById("keyMode");
+const vimBox = document.getElementById("vim");
 const punctSel = document.getElementById("punct");
 const fuzzyBox = document.getElementById("fuzzy");
 const pagingSel = document.getElementById("paging");
+const mappingsTa = document.getElementById("mappings");
+const mappingsMsg = document.getElementById("mappingsMsg");
 
-const PAGE_SIZE = 9;
-const MAX_CANDIDATES = 50;
-
-// 标点映射: key -> [英文, 中文简体, 繁体]
-// 引号类特殊处理(成对交替), 用 "Q"/"q" 标记。
-const PUNCT = {
-  ",":  [",",  "，", "，"],
-  ".":  [".",  "。", "。"],
-  "<":  ["<",  "《", "《"],
-  ">":  [">",  "》", "》"],
-  "?":  ["?",  "？", "？"],
-  "!":  ["!",  "！", "！"],
-  ";":  [";",  "；", "；"],
-  ":":  [":",  "：", "："],
-  "(":  ["(",  "（", "（"],
-  ")":  [")",  "）", "）"],
-  "[":  ["[",  "【", "【"],
-  "]":  ["]",  "】", "】"],
-  "{":  ["{",  "｛", "｛"],
-  "}":  ["}",  "｝", "｝"],
-  "\\": ["\\", "、", "、"],
-  "|":  ["|",  "｜", "｜"],
-  "~":  ["~",  "～", "～"],
-  "^":  ["^",  "……", "……"],
-  "_":  ["_",  "——", "——"],
-  "`":  ["`",  "·", "·"],
-  "'":  ["'",  "Q",  "Q"],   // zh ‘’  tw 『』
-  "\"": ["\"", "q",  "q"],   // zh “”  tw 「」
-};
-const QUOTES = {
-  zh: { "'": ["‘", "’"], "\"": ["“", "”"] },
-  tw: { "'": ["『", "』"], "\"": ["「", "」"] },
-};
-const quoteOpen = { "'": true, "\"": true };
+const LS_FREQ = "naive_pinyin.user_freq";
+const LS_SETTINGS = "shouzibilu.settings";
+const LS_MAPPINGS = "shouzibilu.mappings";
 
 let Module, dictData, ziranma;
-let engine = null;
-let composition = "";
-let candidates = [];
-let page = 0;
-let englishMode = false;
-let shiftLone = false;
-let session = null;    // 自造词学习会话 {keys:[], text:"", commits:0}
-let saveTimer = null;
+let engineCtx = null;
+let ime = null;
+let loadMs = "?";
 
-const LS_KEY = "naive_pinyin.user_freq";
+// ---------- 设置持久化 ----------
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(LS_SETTINGS) || "{}"); }
+  catch (e) { return {}; }
+}
+function saveSettings() {
+  localStorage.setItem(LS_SETTINGS, JSON.stringify({
+    scheme: schemeSel.value, layout: layoutSel.value, keyMode: keyModeSel.value,
+    vim: vimBox.checked, punct: punctSel.value, fuzzy: fuzzyBox.checked,
+    paging: pagingSel.value,
+  }));
+}
+function loadMappings() {
+  try {
+    const m = JSON.parse(localStorage.getItem(LS_MAPPINGS) || "null");
+    if (m && typeof m === "object" && !Array.isArray(m)) return m;
+  } catch (e) { /* fall through */ }
+  return ImeEditor.DEFAULT_MAPPINGS;
+}
 
+// ---------- 引擎 ----------
 async function boot() {
-  Module = await createNaivePinyin();  // UMD 全局工厂
+  Module = await createNaivePinyin();
   [dictData, ziranma] = await Promise.all([
     fetch("data/naive_pinyin.dict.txt").then(r => r.arrayBuffer()),
     fetch("wasm/ziranma.json").then(r => r.json()),
   ]);
+
+  // 恢复设置
+  const s = loadSettings();
+  if (s.scheme) schemeSel.value = s.scheme;
+  if (s.layout) layoutSel.value = s.layout;
+  if (s.keyMode) keyModeSel.value = s.keyMode;
+  if (s.vim != null) vimBox.checked = s.vim;
+  if (s.punct) punctSel.value = s.punct;
+  if (s.fuzzy != null) fuzzyBox.checked = s.fuzzy;
+  if (s.paging) pagingSel.value = s.paging;
+
   rebuildEngine();
+  attachEditor();
+  mappingsTa.value = JSON.stringify(loadMappings(), null, 2);
   editor.focus();
 }
 
 function rebuildEngine() {
-  if (engine) Module.ccall("np_destroy", null, ["number"], [engine]);
-  const config = { max_candidates: MAX_CANDIDATES };
+  if (engineCtx) Module.ccall("np_destroy", null, ["number"], [engineCtx]);
+  const config = { max_candidates: 50 };
   if (schemeSel.value === "ziranma") config.shuangpin = ziranma.shuangpin;
   if (fuzzyBox.checked) config.fuzzy = [["z","zh"],["c","ch"],["s","sh"],["in","ing"],["en","eng"]];
-  // 回传持久化的用户词频/自造词
   try {
-    config.user_freq = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
+    config.user_freq = JSON.parse(localStorage.getItem(LS_FREQ) || "[]");
   } catch (e) { config.user_freq = []; }
-  engine = Module.ccall("np_create", "number", ["string"], [JSON.stringify(config)]);
+  engineCtx = Module.ccall("np_create", "number", ["string"], [JSON.stringify(config)]);
   const ptr = Module._malloc(dictData.byteLength);
   Module.HEAPU8.set(new Uint8Array(dictData), ptr);
   const t0 = performance.now();
-  Module.ccall("np_load_dict", "number", ["number","number","number"], [engine, ptr, dictData.byteLength]);
+  Module.ccall("np_load_dict", "number", ["number","number","number"], [engineCtx, ptr, dictData.byteLength]);
   loadMs = (performance.now() - t0).toFixed(0);
   Module._free(ptr);
-  composition = "";
-  page = 0;
-  render();
   updateStatus();
 }
 
-let loadMs = "?";
-function updateStatus() {
-  const learned = JSON.parse(localStorage.getItem(LS_KEY) || "[]").length;
-  status.textContent = `词典 ${(dictData.byteLength/1048576).toFixed(1)} MB · 解析 ${loadMs} ms · 学习数据 ${learned} 条\n` +
-    "Shift 切换中英文 · 空格/数字选字 · 翻页键可配(默认 , .) · 标点键首选上屏 · Esc 清空 · 回车上屏字母";
-}
-
-function query() {
-  if (!composition) { candidates = []; page = 0; return; }
-  const s = Module.ccall("np_query", "string", ["number","string"], [engine, composition]);
-  const r = JSON.parse(s);
-  candidates = r.candidates || [];
-}
-
-function insertText(text) {
-  const compNode = editor.querySelector(".composition");
-  if (compNode) compNode.remove();
-  placeCaretAtEnd();
-  // contenteditable 下在光标处插入(回车换行后的新行内也能正确落位)
-  if (!document.execCommand("insertText", false, text)) {
-    editor.appendChild(document.createTextNode(text));
-    placeCaretAtEnd();
-  }
-}
-
-function commitText(text, consumed, segments) {
-  // 动态调频上报
-  if (segments && segments.length) {
-    Module.ccall("np_commit", null, ["number", "string"],
-                 [engine, JSON.stringify(segments)]);
-  }
-  // 自造词学习会话: 累积同一字母流的连续提交
-  if (!session) session = { keys: [], text: "", commits: 0 };
-  if (segments) for (const s of segments) session.keys.push(s.key);
-  session.text += text;
-  session.commits++;
-
-  // 提交文本, 未消耗的字母留在缓冲里
-  const rest = composition.slice(consumed).replace(/^'+/, "");
-  insertText(text);
-  composition = rest;
-  page = 0;
-  if (!composition) finishSession();
-  render();
-  scheduleSave();
-}
-
-// 会话完成: >=2 次提交、2~4 字 -> 学习自造词
-function finishSession() {
-  if (session && session.commits >= 2 &&
-      session.text.length >= 2 && session.text.length <= 4) {
-    Module.ccall("np_learn_word", null, ["number", "string", "string"],
-                 [engine, session.keys.join(" "), session.text]);
+// 引擎适配器：ime-editor 通过它访问 wasm（闭包内取最新 ctx，重建无感）
+const engineAdapter = {
+  query(input) {
+    return JSON.parse(Module.ccall("np_query", "string", ["number","string"], [engineCtx, input]));
+  },
+  segment(input) {
+    return JSON.parse(Module.ccall("np_segment", "string", ["number","string"], [engineCtx, input]));
+  },
+  commit(segments) {
+    Module.ccall("np_commit", null, ["number","string"], [engineCtx, JSON.stringify(segments)]);
     scheduleSave();
-  }
-  session = null;
-}
+  },
+  learnWord(key, word) {
+    Module.ccall("np_learn_word", null, ["number","string","string"], [engineCtx, key, word]);
+    scheduleSave();
+  },
+  dumpUser() {
+    return Module.ccall("np_dump_user", "string", ["number"], [engineCtx]);
+  },
+};
 
-function abortSession() { session = null; }
-
-// localStorage 防抖保存
+let saveTimer = null;
 function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    const dump = Module.ccall("np_dump_user", "string", ["number"], [engine]);
-    localStorage.setItem(LS_KEY, dump);
+    localStorage.setItem(LS_FREQ, engineAdapter.dumpUser());
+    updateStatus();
   }, 500);
 }
 
-function commitRawComposition() {
-  abortSession();
-  const raw = composition;
-  composition = "";
-  page = 0;
-  insertText(raw);
-  render();
+function updateStatus() {
+  const learned = JSON.parse(localStorage.getItem(LS_FREQ) || "[]").length;
+  status.textContent =
+    `词典 ${(dictData.byteLength/1048576).toFixed(1)} MB · 解析 ${loadMs} ms · 学习数据 ${learned} 条\n` +
+    "i 进入插入 · Esc/Ctrl+[ 回普通 · / 搜索 · , 动态词 · ←→ 组词光标 · Shift 切换中英文\n" +
+    "注意：请把 OS 输入法切到英文状态使用（网页无法压制激活的系统输入法）。";
 }
 
-function commitBestThenPunct(punct) {
-  if (composition) {
-    if (candidates.length) commitText(candidates[0].text, candidates[0].consumed,
-                                      candidates[0].segments);
-    else commitRawComposition();
-  }
-  insertText(punct);
-  render();
+function onMode(mode, english) {
+  modeBadge.className = "";
+  if (mode === "NORMAL") { modeBadge.textContent = "NORMAL"; modeBadge.className = "normal"; }
+  else if (mode === "SEARCH") { modeBadge.textContent = "SEARCH"; modeBadge.className = "search"; }
+  else if (english) { modeBadge.textContent = "EN"; modeBadge.className = "en"; }
+  else modeBadge.textContent = "中";
 }
 
-function mapPunct(key) {
-  const style = punctSel.value;
-  if (style === "en") return key;
-  const entry = PUNCT[key];
-  if (!entry) return key;  // @ # $ % & * + = / 等原样
-  const idx = style === "zh" ? 1 : 2;
-  const mapped = entry[idx];
-  if (mapped === "Q" || mapped === "q") {
-    const pair = QUOTES[style][key];
-    const out = quoteOpen[key] ? pair[0] : pair[1];
-    quoteOpen[key] = !quoteOpen[key];
-    return out;
-  }
-  return mapped;
-}
-
-function render() {
-  const compNode = editor.querySelector(".composition");
-  if (compNode) compNode.remove();
-  if (composition) {
-    const span = document.createElement("span");
-    span.className = "composition";
-    span.textContent = composition;
-    editor.appendChild(span);
-  }
-  query();
-  candBox.innerHTML = "";
-  const totalPages = Math.max(1, Math.ceil(candidates.length / PAGE_SIZE));
-  if (page >= totalPages) page = totalPages - 1;
-  const slice = candidates.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  slice.forEach((c, i) => {
-    const span = document.createElement("span");
-    span.innerHTML = `<span class="idx">${i + 1}</span>${c.text}`;
-    span.onclick = () => commitText(c.text, c.consumed, c.segments);
-    candBox.appendChild(span);
+function attachEditor() {
+  ime = ImeEditor.attach(editor, {
+    getEngine: () => engineAdapter,
+    layout: layoutSel.value,
+    keyMode: keyModeSel.value,
+    vim: vimBox.checked,
+    punctStyle: punctSel.value,
+    pagingKeys: pagingSel.value === "pg" ? null : pagingSel.value,
+    mappings: loadMappings(),
+    indent: "    ",
+    onMode,
   });
-  if (candidates.length > PAGE_SIZE) {
-    const p = document.createElement("span");
-    p.className = "page";
-    p.textContent = `${page + 1}/${totalPages}页`;
-    candBox.appendChild(p);
+}
+
+// ---------- 控件 ----------
+schemeSel.onchange = () => { rebuildEngine(); saveSettings(); editor.focus(); };
+fuzzyBox.onchange = () => { rebuildEngine(); saveSettings(); editor.focus(); };
+layoutSel.onchange = () => { ime.setOption({layout: layoutSel.value}); saveSettings(); editor.focus(); };
+keyModeSel.onchange = () => { ime.setOption({keyMode: keyModeSel.value}); saveSettings(); editor.focus(); };
+vimBox.onchange = () => { ime.setOption({vim: vimBox.checked}); saveSettings(); editor.focus(); };
+punctSel.onchange = () => { ime.setOption({punctStyle: punctSel.value}); saveSettings(); editor.focus(); };
+pagingSel.onchange = () => {
+  ime.setOption({pagingKeys: pagingSel.value === "pg" ? null : pagingSel.value});
+  saveSettings(); editor.focus();
+};
+
+// ---------- 动态词映射编辑 ----------
+document.getElementById("mappingsSave").onclick = () => {
+  let m;
+  try {
+    m = JSON.parse(mappingsTa.value);
+    if (!m || typeof m !== "object" || Array.isArray(m)) throw new Error("应为 JSON 对象");
+  } catch (e) {
+    mappingsMsg.textContent = "JSON 错误: " + e.message;
+    return;
   }
-  placeCaretAtEnd();
-}
-
-function placeCaretAtEnd() {
-  editor.focus();
-  const sel = window.getSelection();
-  sel.selectAllChildren(editor);
-  sel.collapseToEnd();
-}
-
-function setMode(en) {
-  englishMode = en;
-  modeBadge.textContent = en ? "EN" : "中";
-  modeBadge.className = en ? "en" : "";
-  if (en) { composition = ""; page = 0; render(); }
-}
-
-editor.addEventListener("keydown", (e) => {
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
-  const key = e.key;
-
-  // Shift 单击切换中英文(等 keyup 确认未组合其他键)
-  if (key === "Shift") { shiftLone = true; return; }
-  shiftLone = false;
-
-  if (englishMode) return;  // 英文模式全部走默认
-
-  if (/^[a-z]$/.test(key)) {
-    composition += key;
-    page = 0;
-    render();
-  } else if (key === "'") {
-    // 有字母缓冲时是音节分隔符, 否则是引号
-    if (composition) {
-      composition += "'";
-      render();
-    } else {
-      insertText(mapPunct("'"));
-      render();
+  // eval 条目确认（导入他人配置 = 执行他人代码）
+  const evals = Object.entries(m).filter(([, v]) =>
+    typeof v === "string" && v.startsWith("eval:"));
+  for (const [k] of evals) {
+    if (typeof m[k] !== "string") { mappingsMsg.textContent = k + " 的值应为字符串"; return; }
+  }
+  if (evals.length) {
+    const list = evals.map(([k, v]) => k + "  →  " + v).join("\n");
+    if (!confirm(`以下 ${evals.length} 条映射包含 eval: 代码，保存即信任其执行：\n\n${list}`)) {
+      mappingsMsg.textContent = "已取消。";
+      return;
     }
-  } else if (key === "Backspace") {
-    if (!composition) return;  // 默认删除
-    abortSession();  // 改主意了, 学习会话作废
-    composition = composition.slice(0, -1);
-    page = 0;
-    render();
-  } else if (key === " ") {
-    if (!composition) return;  // 默认空格
-    if (candidates.length) commitText(candidates[0].text, candidates[0].consumed,
-                                      candidates[0].segments);
-    else commitRawComposition();
-  } else if (/^[1-9]$/.test(key)) {
-    const idx = page * PAGE_SIZE + parseInt(key, 10) - 1;
-    if (!composition) return;  // 默认数字
-    if (candidates[idx]) {
-      commitText(candidates[idx].text, candidates[idx].consumed,
-                 candidates[idx].segments);
-    } else {
-      commitRawComposition();  // 无此候选: 字母原样上屏, 数字走默认? 吞掉太怪, 也上屏
-      insertText(key);
-      render();
-    }
-  } else if (composition && isPagingKey(key)) {
-    const totalPages = Math.max(1, Math.ceil(candidates.length / PAGE_SIZE));
-    page = (page + (isPagingNext(key) ? 1 : -1) + totalPages) % totalPages;
-    render();
-  } else if (key === "Escape") {
-    if (!composition) return;
-    abortSession();
-    composition = "";
-    page = 0;
-    render();
-  } else if (key === "Enter") {
-    if (!composition) return;  // 默认换行
-    commitRawComposition();
-  } else if (key.length === 1 && !/[a-zA-Z0-9]/.test(key)) {
-    // 标点键: 有候选则首选上屏再出标点
-    commitBestThenPunct(mapPunct(key));
-  } else {
-    return;  // 方向键等走默认
   }
-  e.preventDefault();
-});
+  localStorage.setItem(LS_MAPPINGS, JSON.stringify(m));
+  ime.setOption({mappings: m});
+  mappingsMsg.textContent = `已保存 ${Object.keys(m).length} 条。`;
+};
+document.getElementById("mappingsReset").onclick = () => {
+  mappingsTa.value = JSON.stringify(ImeEditor.DEFAULT_MAPPINGS, null, 2);
+  mappingsMsg.textContent = "已载入默认表（未保存）。";
+};
 
-document.addEventListener("keyup", (e) => {
-  if (e.key === "Shift" && shiftLone) {
-    shiftLone = false;
-    setMode(!englishMode);
-  }
-});
-
-// 翻页键配置
-function pagingKeys() {
-  const v = pagingSel.value;
-  if (v === "pg") return null;
-  return { prev: v[0], next: v[1] };
-}
-function isPagingKey(key) {
-  if (key === "PageUp" || key === "PageDown") return true;
-  const pk = pagingKeys();
-  return pk && (key === pk.prev || key === pk.next);
-}
-function isPagingNext(key) {
-  if (key === "PageDown") return true;
-  if (key === "PageUp") return false;
-  const pk = pagingKeys();
-  return pk && key === pk.next;
-}
-
-schemeSel.onchange = rebuildEngine;
-fuzzyBox.onchange = rebuildEngine;
-punctSel.onchange = () => editor.focus();
-pagingSel.onchange = () => editor.focus();
-
-// 导出/导入/清空学习数据
+// ---------- 学习数据 导出/导入/清空 ----------
 document.getElementById("exportBtn").onclick = () => {
-  const dump = Module.ccall("np_dump_user", "string", ["number"], [engine]);
-  const blob = new Blob([dump], { type: "application/json" });
+  const blob = new Blob([engineAdapter.dumpUser()], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "naive_pinyin_user_freq.json";
@@ -411,7 +291,7 @@ importFile.onchange = async () => {
   try {
     const data = JSON.parse(await file.text());
     if (!Array.isArray(data)) throw new Error("格式应为 JSON 数组");
-    localStorage.setItem(LS_KEY, JSON.stringify(data));
+    localStorage.setItem(LS_FREQ, JSON.stringify(data));
     rebuildEngine();
     status.textContent = `已导入 ${data.length} 条学习数据。`;
   } catch (e) {
@@ -422,7 +302,7 @@ importFile.onchange = async () => {
 
 document.getElementById("clearBtn").onclick = () => {
   if (!confirm("清空全部调频与自造词学习数据？")) return;
-  localStorage.removeItem(LS_KEY);
+  localStorage.removeItem(LS_FREQ);
   rebuildEngine();
   status.textContent = "学习数据已清空。";
 };

@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 
 #include "matcher.h"
+#include "syllable.h"
 
 namespace naive_pinyin {
 
@@ -94,6 +95,69 @@ std::string EngineImpl::Query(const std::string& input) const {
         {"segments", segs},
     });
   }
+  return out.dump();
+}
+
+std::string EngineImpl::Segment(const std::string& input) const {
+  // 输入校验：与 Query 一致，只接受小写字母和音节分隔符。
+  for (char ch : input) {
+    if (!(ch >= 'a' && ch <= 'z') && ch != '\'') {
+      nlohmann::json err;
+      err["error"] = "invalid input: only a-z and ' allowed";
+      err["input"] = input;
+      return err.dump();
+    }
+  }
+
+  Segmentation seg = config_.shuangpin_map.empty()
+                         ? SegmentFullPinyin(input)
+                         : SegmentShuangpin(input, config_.shuangpin_map);
+
+  // 组词光标站位：从 0 出发经音节边可达的所有位置（DAG 全边界），
+  // 外加末尾本身（末尾可能有半截音节，够不成边）。
+  const int n = seg.length;
+  std::vector<bool> reach(n + 1, false);
+  reach[0] = true;
+  std::vector<int> stack = {0};
+  while (!stack.empty()) {
+    int u = stack.back();
+    stack.pop_back();
+    for (const SyllableEdge& e : seg.edges_from[u]) {
+      if (!reach[e.end]) {
+        reach[e.end] = true;
+        stack.push_back(e.end);
+      }
+    }
+  }
+
+  nlohmann::json out;
+  out["input"] = input;
+  out["boundaries"] = nlohmann::json::array();
+  for (int i = 0; i <= n; ++i) {
+    if (reach[i]) out["boundaries"].push_back(i);
+  }
+  if (!reach[n]) out["boundaries"].push_back(n);
+
+  // 主切分路径（preedit 分词显示用）：贪心最长边，落单字母/ apostrophe 自成一站。
+  nlohmann::json path = nlohmann::json::array();
+  path.push_back(0);
+  for (int i = 0; i < n;) {
+    if (seg.boundary[i]) {  // apostrophe：跳到其后
+      path.push_back(i + 1);
+      ++i;
+      continue;
+    }
+    int best = -1;
+    for (const SyllableEdge& e : seg.edges_from[i]) best = std::max(best, e.end);
+    if (best <= i) {
+      path.push_back(i + 1);  // 落单字母
+      ++i;
+    } else {
+      path.push_back(best);
+      i = best;
+    }
+  }
+  out["path"] = std::move(path);
   return out.dump();
 }
 

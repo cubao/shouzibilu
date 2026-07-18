@@ -95,3 +95,82 @@ TEST(c_api, null_safety) {
   ASSERT(np_query(nullptr, "x") == nullptr);
   np_destroy(nullptr);  // 不应崩溃
 }
+
+TEST(engine, segment_full_pinyin) {
+  std::string err;
+  auto engine = naive_pinyin::Engine::CreateFromJson("{}", &err);
+  ASSERT(engine != nullptr);
+
+  // DAG 全边界：wo|de|dao|dun 主路径外，da(6)、du(9) 等替代音节边也可达。
+  auto j = nlohmann::json::parse(engine->Segment("wodedaodun"));
+  ASSERT(j.contains("boundaries"));
+  std::vector<int> b = j["boundaries"].get<std::vector<int>>();
+  ASSERT_EQ(b, (std::vector<int>{0, 2, 4, 6, 7, 9, 10}));
+
+  // 歧义切分 fan|gan 与 fang|an 两个边界都在；fa/ga 也是音节，2/5 可达。
+  j = nlohmann::json::parse(engine->Segment("fangan"));
+  b = j["boundaries"].get<std::vector<int>>();
+  ASSERT_EQ(b, (std::vector<int>{0, 2, 3, 4, 5, 6}));
+
+  // 末尾半截音节不构成边，但末尾本身永远是一站。
+  j = nlohmann::json::parse(engine->Segment("woded"));
+  b = j["boundaries"].get<std::vector<int>>();
+  ASSERT_EQ(b, (std::vector<int>{0, 2, 4, 5}));
+
+  // apostrophe 硬边界：xi'an， apostrophe 前是一站，不可跨越。
+  j = nlohmann::json::parse(engine->Segment("xi'an"));
+  b = j["boundaries"].get<std::vector<int>>();
+  ASSERT_EQ(b, (std::vector<int>{0, 2, 5}));
+
+  // 主切分路径：贪心最长边。
+  j = nlohmann::json::parse(engine->Segment("wodedaodun"));
+  b = j["path"].get<std::vector<int>>();
+  ASSERT_EQ(b, (std::vector<int>{0, 2, 4, 7, 10}));
+  j = nlohmann::json::parse(engine->Segment("xi'an"));
+  b = j["path"].get<std::vector<int>>();
+  ASSERT_EQ(b, (std::vector<int>{0, 2, 3, 5}));  // apostrophe 自成一站
+
+  // 空输入与非法输入。
+  j = nlohmann::json::parse(engine->Segment(""));
+  b = j["boundaries"].get<std::vector<int>>();
+  ASSERT_EQ(b, (std::vector<int>{0}));
+  j = nlohmann::json::parse(engine->Segment("Ni1"));
+  ASSERT(j.contains("error"));
+}
+
+TEST(engine, segment_shuangpin) {
+  std::string err;
+  // 最小双拼码表：wo/de/dk/dp + aa。
+  auto engine = naive_pinyin::Engine::CreateFromJson(R"(
+    {"shuangpin": {"map": {"wo": "wo", "de": "de", "dk": "dao",
+                           "dp": "dun", "aa": "a"}}}
+  )", &err);
+  ASSERT(engine != nullptr);
+
+  // 恒 2 键一站。
+  auto j = nlohmann::json::parse(engine->Segment("wodedkdp"));
+  std::vector<int> b = j["boundaries"].get<std::vector<int>>();
+  ASSERT_EQ(b, (std::vector<int>{0, 2, 4, 6, 8}));
+
+  // 奇数长度：末尾仍是站。
+  j = nlohmann::json::parse(engine->Segment("woded"));
+  b = j["boundaries"].get<std::vector<int>>();
+  ASSERT_EQ(b, (std::vector<int>{0, 2, 4, 5}));
+
+  // 未命中码表的位置无边（死路），末尾兜底。
+  j = nlohmann::json::parse(engine->Segment("wozzdp"));
+  b = j["boundaries"].get<std::vector<int>>();
+  ASSERT_EQ(b, (std::vector<int>{0, 2, 6}));
+}
+
+TEST(c_api, segment_roundtrip) {
+  void* ctx = np_create("{}");
+  ASSERT(ctx != nullptr);
+  const char* result = np_segment(ctx, "nihao");
+  ASSERT(result != nullptr);
+  auto j = nlohmann::json::parse(result);
+  std::vector<int> b = j["boundaries"].get<std::vector<int>>();
+  ASSERT_EQ(b, (std::vector<int>{0, 2, 4, 5}));  // ni|hao 与 ni|ha|o 两条路径
+  ASSERT(np_segment(nullptr, "x") == nullptr);
+  np_destroy(ctx);
+}

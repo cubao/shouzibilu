@@ -14,6 +14,7 @@ class EngineImpl : public Engine {
 
   bool LoadDict(const char* data, size_t size) override;
   std::string Query(const std::string& input) const override;
+  std::string Segment(const std::string& input) const override;
 
   // 提交一个候选的分段（动态调频）。segments_json 形如
   // [{"key":"ni hao","word":"你好"}, ...]，解析失败静默忽略。

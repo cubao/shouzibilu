@@ -17,6 +17,11 @@ int np_load_dict(void* ctx, const char* buf, int len);
 // 下次调用即失效，调用方需立即拷贝）。ctx 非法时返回 NULL。
 const char* np_query(void* ctx, const char* input);
 
+// 音节边界（组词光标站位）。返回 JSON 形如
+// {"input":"wodedkdp","boundaries":[0,2,4,6,8]}，
+// 静态缓冲区，下次调用即失效。
+const char* np_segment(void* ctx, const char* input);
+
 // 提交一个候选的分段（动态调频）。segments_json 形如
 // [{"key":"ni hao","word":"你好"}, ...]。
 void np_commit(void* ctx, const char* segments_json);

@@ -30,6 +30,13 @@ const char* np_query(void* ctx, const char* input) {
   return result.c_str();
 }
 
+const char* np_segment(void* ctx, const char* input) {
+  if (!ctx || !input) return nullptr;
+  static std::string result;
+  result = static_cast<Engine*>(ctx)->Segment(input);
+  return result.c_str();
+}
+
 void np_commit(void* ctx, const char* segments_json) {
   if (!ctx || !segments_json) return;
   static_cast<EngineImpl*>(ctx)->Commit(segments_json);
