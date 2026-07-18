@@ -211,6 +211,7 @@ const PORT = process.env.E2E_PORT || 8971;
   const setDoc = (v2, p) => page.evaluate(([v3, p3]) => {
     const ed = document.getElementById("editor");
     ed.value = v3; ed.selectionStart = ed.selectionEnd = p3; ed.focus();
+    ed.dispatchEvent(new Event("input"));   // 触发 undo/高亮/行号刷新
   }, [v2, p]);
   const curPos = () => page.evaluate(() => document.getElementById("editor").selectionStart);
 
@@ -294,37 +295,83 @@ const PORT = process.env.E2E_PORT || 8971;
   check("拼音内 . 翻页", page1 !== page2 && page2.includes("2/"), page2);
   await page.keyboard.press("Escape");
 
-  // ---------- 10. 修复回归：裸逗号 / EN 模式动态词 / block 光标 / >> 光标 ----------
+  // ---------- 10. 逗号新语义：字面逗号 + 紧跟字母才进动态词 ----------
   const dynCandCount = () => page.evaluate(() =>
     document.querySelectorAll(".ime-popup .ime-cand").length);
 
-  await setDoc("", 0);   // 清场：上一节遗留了文档
+  await setDoc("", 0);
   await page.keyboard.press("Escape");
   await page.keyboard.press("i");
   await page.keyboard.type(",");
-  check("裸 , 不出选择菜单", (await dynCandCount()) === 0);
+  check(", 立即上屏字面逗号、无模式", (await value()) === "，" && !(await popupVisible()),
+        await value());
   await page.keyboard.press(" ");
-  check(", + 空格 = 字面全角逗号", (await value()) === "，", await value());
-  await page.keyboard.type(",5");
-  check(", + 数字 = 字面逗号+数字", (await value()) === "，，5", await value());
-  await page.keyboard.press("Backspace");  // 删掉多输入的字符？不，，，已在文本里
-  // 清场
+  check(", + 空格 = 逗号+空格（空格不丢）", (await value()) === "， ", await value());
   await setDoc("", 0);
-  await page.keyboard.press("Escape"); await page.keyboard.press("i");
-
-  // EN 模式下动态词同样生效，裸逗号出半角
-  await page.keyboard.press("Shift");   // 切到 EN
-  check("Shift 切到 EN", (await badge()) === "EN");
-  await page.keyboard.type(",");
-  check("EN 裸 , 无菜单", (await dynCandCount()) === 0);
+  await page.keyboard.type(",5");
+  check(", + 数字 = 字面逗号+数字", (await value()) === "，5", await value());
+  await setDoc("", 0);
+  await page.keyboard.type(",check");
+  check(", + 字母：删逗号进动态词菜单", (await dynCandCount()) > 0);
   await page.keyboard.press(" ");
-  check("EN , + 空格 = 半角逗号", (await value()) === ",", await value());
+  check("动态词上屏（前面无逗号残留）", (await value()) === "✅", await value());
+  // 动态词退格到裸逗号再退出：回到无模式
+  await page.keyboard.type(",date");
+  check(",date 菜单在", (await dynCandCount()) > 0);
+  await page.keyboard.press("Escape");
+  check("Esc 退出动态词", !(await popupVisible()));
+
+  // EN 模式：正常打英文完全无感；,check 照样生效
+  await setDoc("", 0);
+  await page.keyboard.press("Shift");   // EN
+  await page.keyboard.type("hello, world");
+  check("EN hello, world 无干扰", (await value()) === "hello, world", await value());
+  await setDoc("", 0);
   await page.keyboard.type(",check");
   check("EN ,check 出菜单", (await dynCandCount()) > 0);
   await page.keyboard.press(" ");
-  check("EN ,check 上屏", (await value()) === ",✅", await value());
+  check("EN ,check 上屏", (await value()) === "✅", await value());
   await page.keyboard.press("Shift");   // 切回中文
-  check("Shift 切回中", (await badge()) === "中");
+
+  // ---------- 10.5 布局撑满 / 光标可见 / 行号 ----------
+  const wrapInfo = await page.evaluate(() => {
+    const w = document.querySelector(".ime-wrap");
+    const ed = document.getElementById("editor");
+    return { wrap: !!w, edH: ed.clientHeight, g: !!document.querySelector(".ime-gutter") };
+  });
+  check("编辑器撑满 (wrap+gutter 存在, 高度>240)",
+        wrapInfo.wrap && wrapInfo.g && wrapInfo.edH > 240, JSON.stringify(wrapInfo));
+
+  // 光标可见性：50 行文档，G 到底后 scrollTop > 0，gg 回顶后 ≈0
+  await page.keyboard.press("Escape");
+  await setDoc(Array.from({length: 50}, (_, i) => "第" + (i + 1) + "行").join("\n"), 0);
+  await page.keyboard.press("g");
+  await page.keyboard.press("g");   // gg 到顶
+  const st1 = await page.evaluate(() => document.getElementById("editor").scrollTop);
+  await page.keyboard.press("Shift+g");   // G 到底
+  const st2 = await page.evaluate(() => document.getElementById("editor").scrollTop);
+  check("G 后滚动到底部可见光标", st2 > st1, `${st1} -> ${st2}`);
+  await page.keyboard.press("g");
+  await page.keyboard.press("g");   // gg 回顶
+  const st3 = await page.evaluate(() => document.getElementById("editor").scrollTop);
+  check("gg 后滚回顶部", st3 < st2 && st3 < 50, String(st3));
+
+  // 行号：数量与逻辑行一致、滚动同步
+  const gInfo = await page.evaluate(() => {
+    const g = document.querySelector(".ime-gutter");
+    return { rows: g.children.length, last: g.lastElementChild.textContent,
+             st: g.scrollTop, edSt: document.getElementById("editor").scrollTop };
+  });
+  check("行号数量 = 逻辑行数", gInfo.rows === 50 && gInfo.last === "50",
+        JSON.stringify(gInfo));
+  await page.keyboard.press("Shift+g");
+  const gSync = await page.evaluate(() => {
+    const g = document.querySelector(".ime-gutter");
+    return Math.abs(g.scrollTop - document.getElementById("editor").scrollTop);
+  });
+  check("行号滚动同步", gSync < 2, String(gSync));
+  await setDoc("", 0);
+  await page.keyboard.press("Escape"); await page.keyboard.press("i");
   await page.keyboard.press("Escape");
 
   // block 光标

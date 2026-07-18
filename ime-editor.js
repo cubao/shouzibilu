@@ -342,6 +342,7 @@ function attach(textarea, opts) {
   let searchCands = [];            // 搜索框内的候选
   let searchStartPos = 0;          // 进入搜索时的光标（incsearch 基点 / Esc 还原点）
   let hlActive = false;            // 搜索接受后高亮保留中
+  let pendingComma = null;         // 刚上屏的字面逗号 {pos, len}；下一键 [a-z] 则删逗号进动态词
   let preferredCol = null;        // j/k 列记忆
 
   const PAGE_SIZE = 9;
@@ -362,16 +363,24 @@ function attach(textarea, opts) {
     "word-wrap:break-word;overflow-wrap:break-word;visibility:hidden;";
   document.body.appendChild(mirror);
 
-  // 搜索高亮 backdrop：textarea 背景透明，底下垫同步滚动的 <mark> 层
+  // 结构：wrap(flex) > gutter(行号) + taWrap > backdrop(高亮层) + textarea
   const wrap = document.createElement("div");
-  wrap.style.cssText = "position:relative;display:block;";
+  wrap.className = "ime-wrap";
+  wrap.style.cssText = "display:flex;align-items:stretch;";
+  const gutter = document.createElement("div");
+  gutter.className = "ime-gutter";
+  gutter.setAttribute("aria-hidden", "true");
+  const taWrap = document.createElement("div");
+  taWrap.style.cssText = "position:relative;flex:1;min-width:0;";
   const hadFocus = document.activeElement === textarea;
   textarea.parentNode.insertBefore(wrap, textarea);
   const backdrop = document.createElement("div");
   backdrop.className = "ime-backdrop";
   backdrop.setAttribute("aria-hidden", "true");
-  wrap.appendChild(backdrop);
-  wrap.appendChild(textarea);
+  taWrap.appendChild(backdrop);
+  taWrap.appendChild(textarea);
+  wrap.appendChild(gutter);
+  wrap.appendChild(taWrap);
   if (hadFocus) textarea.focus();
   const taBg = getComputedStyle(textarea).backgroundColor;
   backdrop.style.cssText =
@@ -390,6 +399,12 @@ function attach(textarea, opts) {
     "position:fixed;display:none;z-index:9998;pointer-events:none;background:#fff;" +
     "mix-blend-mode:difference;border-radius:2px;";
   document.body.appendChild(blockCaret);
+
+  // gutter 行高测量容器（屏外）
+  const gutterMirror = document.createElement("div");
+  gutterMirror.style.cssText = "position:absolute;left:-9999px;top:0;visibility:hidden;" +
+    "white-space:pre-wrap;word-wrap:break-word;overflow-wrap:break-word;box-sizing:border-box;";
+  document.body.appendChild(gutterMirror);
 
   function caretPixel(markerCh) {
     const ta = textarea;
@@ -454,6 +469,58 @@ function attach(textarea, opts) {
     if (idx >= 0) setCur(idx);
   }
 
+  // 键盘驱动光标后，最小滚动让光标行可见（scrolloff=0）
+  function ensureCursorVisible() {
+    const ta = textarea;
+    const cs = getComputedStyle(ta);
+    for (const p of ["fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing",
+                     "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+                     "borderTopWidth", "borderRightWidth", "borderBottomWidth",
+                     "borderLeftWidth", "width", "boxSizing", "tabSize"]) {
+      mirror.style[p] = cs[p];
+    }
+    mirror.textContent = ta.value.slice(0, ta.selectionStart);
+    const marker = document.createElement("span");
+    marker.textContent = "​";
+    mirror.appendChild(marker);
+    const y = marker.offsetTop;
+    const padTop = parseFloat(cs.paddingTop) || 0;
+    const padBottom = parseFloat(cs.paddingBottom) || 0;
+    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
+    if (y - ta.scrollTop < padTop) ta.scrollTop = y - padTop;
+    else if (y - ta.scrollTop + lh > ta.clientHeight - padBottom) {
+      ta.scrollTop = y + lh - ta.clientHeight + padBottom;
+    }
+  }
+
+  // 行号 gutter：量出每个逻辑行的折行高度，行号对齐首视觉行
+  function refreshGutter() {
+    const ta = textarea;
+    const cs = getComputedStyle(ta);
+    for (const p of ["fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing",
+                     "tabSize"]) {
+      gutterMirror.style[p] = cs[p];
+    }
+    const padTop = parseFloat(cs.paddingTop) || 0;
+    const padBottom = parseFloat(cs.paddingBottom) || 0;
+    gutterMirror.style.width = ta.clientWidth + "px";
+    gutterMirror.style.padding =
+      `${padTop}px ${cs.paddingRight} ${padBottom}px ${cs.paddingLeft}`;
+    const lines = ta.value.split("\n");
+    gutterMirror.innerHTML = lines.map((l) =>
+      "<div>" + (escapeHtml(l) || " ") + "</div>").join("");
+    // getBoundingClientRect 取小数高度，避免 offsetHeight 取整累计误差
+    const hs = [...gutterMirror.children].map((c) => c.getBoundingClientRect().height);
+    gutter.innerHTML = lines.map((_, i) =>
+      `<div style="height:${hs[i]}px;line-height:${cs.lineHeight}">${i + 1}</div>`
+    ).join("");
+    gutter.style.paddingTop = padTop + "px";
+    gutter.style.paddingBottom = padBottom + "px";
+    gutter.style.fontFamily = cs.fontFamily;
+    gutter.style.fontSize = cs.fontSize;
+    gutter.scrollTop = ta.scrollTop;
+  }
+
   function updateBlockCaret() {
     if (mode !== "NORMAL" || document.activeElement !== textarea) {
       blockCaret.style.display = "none";
@@ -499,6 +566,7 @@ function attach(textarea, opts) {
     setCur(newCursor);
     lastValue = newValue;
     refreshHighlights();
+    refreshGutter();
   }
   function insertAt(text, pos) {
     const v = val();
@@ -512,6 +580,7 @@ function attach(textarea, opts) {
       lastValue = textarea.value;
     }
     refreshHighlights();
+    refreshGutter();
   });
 
   // ---------- 键解析 ----------
@@ -748,6 +817,12 @@ function attach(textarea, opts) {
     if (key === "Shift") { shiftLone = true; return false; }
     shiftLone = false;
 
+    // 逗号一次性标记：非「紧跟小写字母」的任何真实按键都作废（修饰键除外）
+    if (pendingComma && !["Shift", "Control", "Alt", "Meta"].includes(key)) {
+      const c0 = resolveChar(e);
+      if (!c0 || !/^[a-z]$/.test(c0)) pendingComma = null;
+    }
+
     if (key === "Escape") {
       if (composition) {
         abortSession();
@@ -759,26 +834,39 @@ function attach(textarea, opts) {
       return true;
     }
     const ch = resolveChar(e);
-    // EN 模式：除动态词（, 开头）外全透传（布局解析对 en/cn 一致）
-    if (english && !composition && ch !== ",") return false;
+    // EN 模式：除动态词相关（, 或紧跟逗号的字母）外全透传（布局解析对 en/cn 一致）
+    if (english && !composition &&
+        ch !== "," && !(pendingComma && /^[a-z]$/.test(ch || ""))) return false;
 
     // --- 无缓冲：少量特殊键，其余透传/字面量 ---
     if (!composition) {
       if (key === "Backspace" || key === "Delete" || key.startsWith("Arrow") ||
-          key === "Home" || key === "End") return false;
-      if (key === "Enter") { insertAt("\n", cur()); return true; }
-      if (key === "Tab") { insertAt(cfg.indent, cur()); return true; }
-      if (ch == null) return false;
-      if (ch === ",") {          // 进动态词模式
-        composition = ","; caret = 1; page = 0;
-        refreshSegment(); refreshCandidates(); render();
+          key === "Home" || key === "End") { pendingComma = null; return false; }
+      if (key === "Enter") { pendingComma = null; insertAt("\n", cur()); return true; }
+      if (key === "Tab") { pendingComma = null; insertAt(cfg.indent, cur()); return true; }
+      if (ch == null) { pendingComma = null; return false; }
+      if (ch === ",") {
+        // 逗号：立即上屏字面量（英态半角），不进模式；下一键 [a-z] 才转动态词
+        const lit = english ? "," : mapPunct(",");
+        insertAt(lit, cur());
+        pendingComma = { pos: cur(), len: lit.length };
         return true;
       }
       if (/^[a-z]$/.test(ch)) {
-        composition = ch; caret = 1; page = 0;
+        if (pendingComma && cur() === pendingComma.pos) {
+          // 紧跟逗号的字母：删掉刚上屏的逗号，转入动态词模式
+          const v = val();
+          applyText(v.slice(0, cur() - pendingComma.len) + v.slice(cur()),
+                    cur() - pendingComma.len, false);
+          composition = "," + ch; caret = 2; page = 0;
+        } else {
+          composition = ch; caret = 1; page = 0;
+        }
+        pendingComma = null;
         refreshSegment(); refreshCandidates(); render();
         return true;
       }
+      pendingComma = null;
       if (/^[A-Z]$/.test(ch)) { insertAt(ch, cur()); return true; }
       if (/^[0-9]$/.test(ch)) { insertAt(ch, cur()); return true; }
       if (ch.length === 1 && !/[a-zA-Z0-9]/.test(ch)) {
@@ -1308,7 +1396,7 @@ function attach(textarea, opts) {
     else if (mode === "SEARCH") handled = onSearchKey(e);
     else handled = onInsertKey(e);
     if (handled) e.preventDefault();
-    if (mode === "NORMAL") updateBlockCaret();
+    if (mode === "NORMAL") { updateBlockCaret(); ensureCursorVisible(); }
   }
 
   function onKeyup(e) {
@@ -1340,14 +1428,16 @@ function attach(textarea, opts) {
   textarea.addEventListener("keydown", onKeydown);
   textarea.addEventListener("focus", updateBlockCaret);
   textarea.addEventListener("blur", updateBlockCaret);
-  textarea.addEventListener("click", updateBlockCaret);
+  textarea.addEventListener("click", () => { pendingComma = null; updateBlockCaret(); });
   textarea.addEventListener("scroll", () => {
     backdrop.scrollTop = textarea.scrollTop;
     backdrop.scrollLeft = textarea.scrollLeft;
+    gutter.scrollTop = textarea.scrollTop;
   });
   document.addEventListener("keyup", onKeyup);
   window.addEventListener("scroll", onScrollOrResize, true);
-  window.addEventListener("resize", onScrollOrResize);
+  function onWindowResize() { onScrollOrResize(); refreshGutter(); }
+  window.addEventListener("resize", onWindowResize);
 
   // caret 样式（注入一次）
   const style = document.createElement("style");
@@ -1358,6 +1448,11 @@ function attach(textarea, opts) {
     ".ime-backdrop mark{background:#ffe58a;color:transparent;border-radius:2px}" +
     ".ime-backdrop mark.ime-hl-cur{background:#ffab4d}";
   document.head.appendChild(style);
+
+  refreshGutter();
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => refreshGutter());   // web font 到位后重排行号高
+  }
 
   // 初始模式
   if (cfg.vim) setMode("NORMAL");
@@ -1382,12 +1477,13 @@ function attach(textarea, opts) {
       textarea.removeEventListener("click", updateBlockCaret);
       document.removeEventListener("keyup", onKeyup);
       window.removeEventListener("scroll", onScrollOrResize, true);
-      window.removeEventListener("resize", onScrollOrResize);
+      window.removeEventListener("resize", onWindowResize);
       textarea.style.caretColor = "";
       textarea.style.background = "";
       wrap.parentNode.insertBefore(textarea, wrap);   // 还原 DOM
       wrap.remove();
-      popup.remove(); mirror.remove(); style.remove(); blockCaret.remove();
+      popup.remove(); mirror.remove(); style.remove();
+      blockCaret.remove(); gutterMirror.remove();
     },
   };
 }
