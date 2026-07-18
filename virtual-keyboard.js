@@ -1,47 +1,60 @@
 /*
  * virtual-keyboard.js — 手自笔录 触屏虚拟键盘
  *
- * 页面底部上拉展开的虚拟键盘：按当前布局表（qwerty / dvorak / dvorak4tzx /
- * 自定义 JSON 表）渲染键面，按键经 ime.sendKey 注入，与物理键盘走完全同一管线。
+ * 页面底部上拉展开的虚拟键盘：键面随布局表（qwerty / dvorak / dvorak4tzx /
+ * 自定义 JSON 表）渲染，按键经 ime.sendKey 注入，与物理键盘走完全同一管线。
  *
- * 布局（左栏仿真实键盘左缘）：
- *   左栏:  功能列 `~ Tab ESC Shift Ctrl（5 行）
- *          + 数字/符号 2 列 × 8 矮行（双标签，末格 ▽ 收起键）
- *   主区:  字母三排（10/11/10，⌫ 在第一排右端、⏎ 在第三排右端）
- *          + 功能行（中/EN 切换、空格、方向键）
+ * 布局（六排，仿真实键盘轮廓 + ANSI 错行）：
+ *   第0排:  ▽    ! @ # $ % ^ & * ( ) { }        （shifted 数字符号，直按）
+ *   第A排:  `~   1 2 3 4 5 6 7 8 9 0 \ |          （数字，直按）
+ *   第1排:  Tab  _ =   q w e r t y u i o p  ⌫     （字母按布局表；右错 3%）
+ *   第2排:  ESC  - +   a s d f g h j k l ;  '     （右错 5.5%）
+ *   第3排:  ⇧    [ ]   z x c v b n m , . /  ⏎     （右错 9%）
+ *   第4排:  Ctrl 中/EN 👆 [—— 空格 ——] ← ↑ ↓ →
+ *   ; ' , . / 是常规字母区键位，随布局表整体翻译（dvorak 系下出字母）。
  *
  * 交互约定：
- *   - Shift / Ctrl = sticky：单击武装一次，下一个键带修饰发出后自动解除，再点自己取消
+ *   - ⇧ / Ctrl = sticky：单击武装一次，下一个键带修饰发出后自动解除，再点自己取消；
+ *     武装只影响字母大小写与 `~ 键（数字/符号排全部直按，无视武装）
  *   - 中/EN 切换只走功能行专用键（键面实时显示当前状态）；sticky Shift 永不切语言
- *   - 长按 ← / → = Home / End；⌫ 长按自动重复
+ *   - 双拼方案下字母键标注韵母（浅绿、右下角小字，zh/ch/sh 灰字标在 v/i/u 左上）
+ *   - 长按 ← / → = Home / End；⌫ 长按自动重复；👆 长按 = 放大镜拖动光标
  *   - 触屏（coarse）下打开键盘时 textarea 置 readonly 屏蔽系统键盘，
  *     INSERT 模式改自绘细光标（ime touchCaret），文本区底部补 padding 防光标被遮
  *
  * 用法：
- *   const vkb = VirtualKeyboard.attach(ime, textarea, { coarse: true });
+ *   const vkb = VirtualKeyboard.attach(ime, textarea, {
+ *     coarse: true,
+ *     getShuangpinFinals: () => ({ q: ["iu"], ... } | null),   // 可选
+ *   });
  *   vkb.setEnabled(true);    // 显示上拉手柄 / 恢复上次展开状态
- *   vkb.refresh();           // 布局等配置变化后重读布局表刷新键面
+ *   vkb.refresh();           // 布局/方案等配置变化后重读配置刷新键面
  *   vkb.destroy();
  */
 (function (global) {
 "use strict";
 
-// 主区三排的 e.code 序列（与 ime-editor.js 的 LAYOUTS 键位一致；
-// dvorak 系布局把字母放在标点键位上，所以标点键位也在字母排里按表渲染）
+// 字母三排的 e.code 序列（与 ime-editor.js 的 LAYOUTS 键位一致；
+// dvorak 系布局把字母放在标点键位上，; ' , . / 随布局表整体翻译）
 const ROW1 = ["KeyQ", "KeyW", "KeyE", "KeyR", "KeyT", "KeyY", "KeyU", "KeyI", "KeyO", "KeyP"];
 const ROW2 = ["KeyA", "KeyS", "KeyD", "KeyF", "KeyG", "KeyH", "KeyJ", "KeyK", "KeyL",
               "Semicolon", "Quote"];
 const ROW3 = ["KeyZ", "KeyX", "KeyC", "KeyV", "KeyB", "KeyN", "KeyM",
               "Comma", "Period", "Slash"];
-// 左栏数字/符号两列（行优先，2 列 × 8 行；null = ▽ 收起键）
-const SCOL = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8",
-              "Digit9", "Digit0", "Minus", "Equal", "BracketLeft", "BracketRight", "Backslash",
-              null];
+// 第0排：shifted 数字符号 + {}（直按）；第A排：数字 + \ |（直按）
+const SYM_ROW0 = "! @ # $ % ^ & * ( ) { }".split(" ");
+const SYM_ROWA = "1 2 3 4 5 6 7 8 9 0 \\ |".split(" ");
+// 字母三排左侧的符号两列（每排一对，随排一起错行）
+const SYM_MID = [["_", "="], ["-", "+"], ["[", "]"]];
+// 字母排错行幅度（行宽百分比，ANSI 错落比例）
+const STAGGER = ["3%", "5.5%", "9%"];
+// 双拼声母键提示（zh/ch/sh = v/i/u）
+const SP_HINT = { v: "zh", i: "ch", u: "sh" };
 
 const LS_KEY = "shouzibilu.vkb";
 
 function attach(ime, textarea, opts) {
-  const cfg = Object.assign({ coarse: false }, opts);
+  const cfg = Object.assign({ coarse: false, getShuangpinFinals: () => null }, opts);
 
   let open = false;
   try { open = localStorage.getItem(LS_KEY) === "1"; } catch (e) { /* 隐私模式 */ }
@@ -64,27 +77,26 @@ function attach(ime, textarea, opts) {
       "user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;" +
       "touch-action:none;box-shadow:0 -1px 8px rgba(0,0,0,.18);transition:opacity .15s}" +
     ".vkb-faded{opacity:.12}" +
-    ".vkb-body{display:flex;gap:5px;height:calc(4 * clamp(44px,7.5vh,64px) + 15px)}" +
-    ".vkb-fcol{display:flex;flex-direction:column;gap:5px;flex:none}" +
-    ".vkb-fcol .vkb-key{min-width:34px;font-size:11px;color:#222}" +
-    ".vkb-scols{display:grid;grid-template-columns:repeat(2,1fr);" +
-      "grid-template-rows:repeat(8,1fr);gap:5px;flex:none}" +
-    ".vkb-scols .vkb-key{min-width:32px;font-size:11px}" +
-    ".vkb-main{flex:1;display:flex;flex-direction:column;gap:5px;min-width:0}" +
-    ".vkb-row{display:flex;gap:5px;flex:1}" +
+    ".vkb-body{display:flex;flex-direction:column;gap:5px;box-sizing:border-box;" +
+      "height:calc(6 * clamp(46px,8vh,72px) + 25px)}" +
+    ".vkb-row{display:flex;gap:5px;flex:1;min-height:0}" +
     ".vkb-key{flex:1;background:#fdfdfd;border-radius:6px;box-shadow:0 1px 0 rgba(0,0,0,.35);" +
       "display:flex;align-items:center;justify-content:center;position:relative;" +
-      "color:#111;font-size:17px;cursor:pointer}" +
+      "color:#111;font-size:16px;cursor:pointer;min-width:0;overflow:hidden}" +
     ".vkb-key:active{background:#aab2bd}" +
-    ".vkb-func{background:#b9c0ca;font-size:12px}" +
+    ".vkb-fcell{flex:none;width:clamp(30px,7.5%,52px);background:#b9c0ca;font-size:11px}" +
+    ".vkb-sym{flex:none;width:clamp(24px,6%,40px);font-size:14px}" +
+    ".vkb-char{font-size:14px}" +
     ".vkb-wide{flex:1.5}" +
     ".vkb-space{flex:4.2}" +
+    ".vkb-stagger{flex:none;height:1px}" +
     ".vkb-armed{background:#4a90d9;color:#fff}" +
     ".vkb-armed .vkb-sub{color:#dce9f7}" +
-    ".vkb-sub{position:absolute;top:1px;right:4px;font-size:8px;color:#777}" +
-    ".vkb-dot{padding:0}" +
-    ".vkb-reddot{width:14px;height:14px;border-radius:50%;background:#e03e3e;" +
-      "box-shadow:0 0 0 2px rgba(224,62,62,.25)}" +
+    ".vkb-sub{position:absolute;top:1px;right:3px;font-size:8px;color:#777}" +
+    ".vkb-fin{position:absolute;right:2px;bottom:1px;font-size:7.5px;line-height:1.15;" +
+      "color:#6dbf73;text-align:right;white-space:pre}" +
+    ".vkb-sp{position:absolute;left:2px;top:1px;font-size:7px;color:#9aa}" +
+    ".vkb-dot{font-size:16px}" +
     ".vkb-loupe{position:fixed;z-index:10002;width:180px;height:84px;border-radius:12px;" +
       "background:#fff;border:1px solid #bbb;box-shadow:0 4px 18px rgba(0,0,0,.25);" +
       "overflow:hidden;pointer-events:none;display:none}" +
@@ -110,9 +122,8 @@ function attach(ime, textarea, opts) {
   document.body.appendChild(panel);
 
   // ---------- 键面渲染 ----------
-  const letterKeys = [];   // [{el, code}] 主区三排
-  const dualKeys = [];     // [{el, code}] 左栏双标签键（含 Backquote）
-  let kShift = null, kCtrl = null, kLang = null;
+  const letterKeys = [];   // [{el, code}] 字母三排
+  let kBackq = null, kShift = null, kCtrl = null, kLang = null;
 
   function tableEntry(code) {
     const t = ime.getLayoutTable();
@@ -121,23 +132,70 @@ function attach(ime, textarea, opts) {
     return (t && t[code]) || (qw && qw[code]) || null;
   }
 
+  function mkKey(parent, cls, label) {
+    const el = document.createElement("div");
+    el.className = "vkb-key" + (cls ? " " + cls : "");
+    if (label != null) {
+      const cap = document.createElement("span");
+      cap.className = "vkb-cap";
+      cap.textContent = label;
+      el.appendChild(cap);
+    }
+    parent.appendChild(el);
+    return el;
+  }
+  function mkRow() {
+    const r = document.createElement("div");
+    r.className = "vkb-row";
+    body.appendChild(r);
+    return r;
+  }
+  function mkStagger(parent, i) {
+    const s = document.createElement("div");
+    s.className = "vkb-stagger";
+    s.style.width = STAGGER[i];
+    parent.appendChild(s);
+  }
+
   function refreshLabels() {
+    const finals = cfg.getShuangpinFinals ? cfg.getShuangpinFinals() : null;
     for (const k of letterKeys) {
       const en = tableEntry(k.code);
-      k.el.textContent = en ? (shiftArm ? en[1] : en[0]) : "";
-    }
-    for (const k of dualKeys) {
-      const en = tableEntry(k.code);
+      const ch = en ? (shiftArm ? en[1] : en[0]) : "";
       k.el.textContent = "";
-      if (!en) continue;
-      const big = document.createElement("span");
-      big.textContent = shiftArm ? en[1] : en[0];
-      k.el.appendChild(big);
-      if (en[1] !== en[0]) {
+      const cap = document.createElement("span");
+      cap.className = "vkb-cap";
+      cap.textContent = ch;
+      k.el.appendChild(cap);
+      const base = en && /^[a-z]$/.test(en[0]) ? en[0] : null;   // 韵母跟字符走
+      if (base && finals) {
+        const f = finals[base];
+        if (f && f.length) {
+          const s = document.createElement("span");
+          s.className = "vkb-fin";
+          s.textContent = f.join("\n");
+          k.el.appendChild(s);
+        }
+        if (SP_HINT[base]) {
+          const s2 = document.createElement("span");
+          s2.className = "vkb-sp";
+          s2.textContent = SP_HINT[base];
+          k.el.appendChild(s2);
+        }
+      }
+    }
+    if (kBackq) {   // 唯一双标签键：`~
+      const en = tableEntry("Backquote");
+      kBackq.textContent = "";
+      if (en) {
+        const big = document.createElement("span");
+        big.className = "vkb-cap";
+        big.textContent = shiftArm ? en[1] : en[0];
+        kBackq.appendChild(big);
         const sub = document.createElement("span");
         sub.className = "vkb-sub";
         sub.textContent = shiftArm ? en[0] : en[1];
-        k.el.appendChild(sub);
+        kBackq.appendChild(sub);
       }
     }
     if (kShift) kShift.classList.toggle("vkb-armed", shiftArm);
@@ -153,13 +211,17 @@ function attach(ime, textarea, opts) {
     if (shiftArm || ctrlArm) { shiftArm = ctrlArm = false; refreshLabels(); }
     refreshLang();
   }
-  function fireCode(code) {
+  function fireCode(code) {   // 布局表键位（字母、`~）：吃 sticky 修饰
     const en = tableEntry(code);
-    if (!en) { if (code === "Space") fireNamed(" ", "Space"); return; }
+    if (!en) return;
     ime.sendKey({
       key: shiftArm ? en[1] : en[0],
       code, shiftKey: shiftArm, ctrlKey: ctrlArm,
     });
+    afterFire();
+  }
+  function fireChar(ch) {   // 单字符直按（数字/符号排）：无视 sticky 武装，但会解除武装
+    ime.sendKey({ key: ch, code: "", shiftKey: false, ctrlKey: ctrlArm });
     afterFire();
   }
   function fireNamed(key, code) {
@@ -176,94 +238,79 @@ function attach(ime, textarea, opts) {
   function pd(el, fn) {
     el.addEventListener("pointerdown", (e) => { e.preventDefault(); fn(e); });
   }
-  function mkKey(parent, cls) {
-    const el = document.createElement("div");
-    el.className = "vkb-key" + (cls ? " " + cls : "");
-    parent.appendChild(el);
-    return el;
-  }
 
-  // 左栏功能列：`~ Tab ESC Shift Ctrl（真实键盘左缘）
-  const fcol = document.createElement("div");
-  fcol.className = "vkb-fcol";
-  body.appendChild(fcol);
-  const kBackq = mkKey(fcol, "vkb-func");
-  dualKeys.push({ el: kBackq, code: "Backquote" });
+  // 第0排：▽ + shifted 数字符号 + { }
+  const r0 = mkRow();
+  const kClose = mkKey(r0, "vkb-fcell", "▽");
+  kClose.title = "收起键盘";
+  pd(kClose, () => closeKb());
+  for (const ch of SYM_ROW0) {
+    const k = mkKey(r0, "vkb-char", ch);
+    pd(k, () => fireChar(ch));
+  }
+  // 第A排：`~ + 数字 + \ |
+  const rA = mkRow();
+  kBackq = mkKey(rA, "vkb-fcell");
   pd(kBackq, () => fireCode("Backquote"));
-  const kTab = mkKey(fcol, "vkb-func"); kTab.textContent = "Tab";
-  pd(kTab, () => fireNamed("Tab", "Tab"));
-  const kEsc = mkKey(fcol, "vkb-func"); kEsc.textContent = "ESC";
-  pd(kEsc, () => fireNamed("Escape", "Escape"));
-  kShift = mkKey(fcol, "vkb-func"); kShift.textContent = "⇧";
-  pd(kShift, () => { shiftArm = !shiftArm; refreshLabels(); });
-  kCtrl = mkKey(fcol, "vkb-func"); kCtrl.textContent = "Ctrl";
-  pd(kCtrl, () => { ctrlArm = !ctrlArm; refreshLabels(); });
-
-  // 左栏数字/符号两列（8 矮行）+ ▽ 收起
-  const scols = document.createElement("div");
-  scols.className = "vkb-scols";
-  body.appendChild(scols);
-  for (const code of SCOL) {
-    if (code) {
-      const k = mkKey(scols, "vkb-func");
-      dualKeys.push({ el: k, code });
-      pd(k, () => fireCode(code));
-    } else {
-      const k = mkKey(scols, "vkb-func");
-      k.textContent = "▽";
-      k.title = "收起键盘";
-      pd(k, () => closeKb());
-    }
+  for (const ch of SYM_ROWA) {
+    const k = mkKey(rA, "vkb-char", ch);
+    pd(k, () => fireChar(ch));
   }
-
-  // 主区
-  const main = document.createElement("div");
-  main.className = "vkb-main";
-  body.appendChild(main);
-  function letterRow(codes, parent) {
-    for (const code of codes) {
-      const k = mkKey(parent, "");
+  // 字母三排：左功能格 + 错行 + 符号两列 + 字母（+ ⌫/⏎）
+  const letterRows = [ROW1, ROW2, ROW3];
+  let repTimer = null;   // ⌫ 长按重复定时器（destroy 时清理）
+  for (let i = 0; i < 3; i++) {
+    const r = mkRow();
+    if (i === 0) {
+      const kTab = mkKey(r, "vkb-fcell", "Tab");
+      pd(kTab, () => fireNamed("Tab", "Tab"));
+    } else if (i === 1) {
+      const kEsc = mkKey(r, "vkb-fcell", "ESC");
+      pd(kEsc, () => fireNamed("Escape", "Escape"));
+    } else {
+      kShift = mkKey(r, "vkb-fcell", "⇧");
+      pd(kShift, () => { shiftArm = !shiftArm; refreshLabels(); });
+    }
+    mkStagger(r, i);   // 错行：符号两列与字母一起右错
+    for (const ch of SYM_MID[i]) {
+      const k = mkKey(r, "vkb-sym", ch);
+      pd(k, () => fireChar(ch));
+    }
+    for (const code of letterRows[i]) {
+      const k = mkKey(r, "");
       letterKeys.push({ el: k, code });
       pd(k, () => fireCode(code));
     }
+    if (i === 0) {   // ⌫ 长按自动重复
+      const kBksp = mkKey(r, "vkb-fcell vkb-wide", "⌫");
+      kBksp.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        fireNamed("Backspace", "Backspace");
+        clearTimeout(repTimer);
+        repTimer = setTimeout(function rep() {
+          fireNamed("Backspace", "Backspace");
+          repTimer = setTimeout(rep, 55);
+        }, 380);
+      });
+      for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
+        kBksp.addEventListener(ev, () => clearTimeout(repTimer));
+      }
+    }
+    if (i === 2) {
+      const kEnter = mkKey(r, "vkb-fcell vkb-wide", "⏎");
+      pd(kEnter, () => fireNamed("Enter", "Enter"));
+    }
   }
-  // 第 1 排：字母 + ⌫（长按自动重复）
-  const r1 = document.createElement("div"); r1.className = "vkb-row"; main.appendChild(r1);
-  letterRow(ROW1, r1);
-  const kBksp = mkKey(r1, "vkb-func vkb-wide"); kBksp.textContent = "⌫";
-  let repTimer = null;
-  kBksp.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    fireNamed("Backspace", "Backspace");
-    clearTimeout(repTimer);
-    repTimer = setTimeout(function rep() {
-      fireNamed("Backspace", "Backspace");
-      repTimer = setTimeout(rep, 55);
-    }, 380);
-  });
-  for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
-    kBksp.addEventListener(ev, () => clearTimeout(repTimer));
-  }
-  // 第 2 排：字母（11 键）
-  const r2 = document.createElement("div"); r2.className = "vkb-row"; main.appendChild(r2);
-  letterRow(ROW2, r2);
-  // 第 3 排：字母 + ⏎
-  const r3 = document.createElement("div"); r3.className = "vkb-row"; main.appendChild(r3);
-  letterRow(ROW3, r3);
-  const kEnter = mkKey(r3, "vkb-func vkb-wide"); kEnter.textContent = "⏎";
-  pd(kEnter, () => fireNamed("Enter", "Enter"));
-  // 第 4 排：中/EN、空格、方向键（←/→ 长按 = Home/End）
-  const r4 = document.createElement("div"); r4.className = "vkb-row"; main.appendChild(r4);
-  kLang = mkKey(r4, "vkb-func");
+  // 第4排（功能行）：Ctrl + 中/EN + 👆 + 空格 + 方向键（←/→ 长按 = Home/End）
+  const r4 = mkRow();
+  kCtrl = mkKey(r4, "vkb-fcell", "Ctrl");
+  pd(kCtrl, () => { ctrlArm = !ctrlArm; refreshLabels(); });
+  kLang = mkKey(r4, "vkb-fcell");
   pd(kLang, fireLang);
-  // 🔴 小红点：长按进入放大镜光标跟踪（实现见下方「小红点」一节）
-  const kDot = mkKey(r4, "vkb-func vkb-dot");
+  const kDot = mkKey(r4, "vkb-fcell vkb-dot", "👆");
   kDot.title = "长按：放大镜拖动光标";
-  const kDotInner = document.createElement("span");
-  kDotInner.className = "vkb-reddot";
-  kDot.appendChild(kDotInner);
   const kSpace = mkKey(r4, "vkb-space");
-  pd(kSpace, () => fireCode("Space"));
+  pd(kSpace, () => fireNamed(" ", "Space"));
   function bindArrowLP(el, arrow, homeEnd) {
     let timer = null, lpFired = false, canceled = false;
     el.addEventListener("pointerdown", (e) => {
@@ -283,13 +330,13 @@ function attach(ime, textarea, opts) {
       el.addEventListener(ev, () => { canceled = true; clearTimeout(timer); });
     }
   }
-  const kLeft = mkKey(r4, "vkb-func"); kLeft.textContent = "←";
+  const kLeft = mkKey(r4, "vkb-fcell", "←");
   bindArrowLP(kLeft, "ArrowLeft", "Home");
-  const kUp = mkKey(r4, "vkb-func"); kUp.textContent = "↑";
+  const kUp = mkKey(r4, "vkb-fcell", "↑");
   pd(kUp, () => fireNamed("ArrowUp"));
-  const kDown = mkKey(r4, "vkb-func"); kDown.textContent = "↓";
+  const kDown = mkKey(r4, "vkb-fcell", "↓");
   pd(kDown, () => fireNamed("ArrowDown"));
-  const kRight = mkKey(r4, "vkb-func"); kRight.textContent = "→";
+  const kRight = mkKey(r4, "vkb-fcell", "→");
   bindArrowLP(kRight, "ArrowRight", "End");
 
   // ---------- 小红点：长按放大镜跟踪光标 ----------
@@ -514,8 +561,8 @@ function attach(ime, textarea, opts) {
       destroyed = true;
       if (enabled && open) unapplyTextarea();
       window.removeEventListener("resize", onResize);
-      clearTimeout(repTimer);
       clearTimeout(dotTimer);
+      clearTimeout(repTimer);
       handle.remove(); panel.remove(); style.remove();
       if (loupe) loupe.remove();
     },

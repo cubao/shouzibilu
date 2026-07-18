@@ -19,9 +19,10 @@ AI 时代，留一个独立的中文输入环境，手写一点文字。
 - **组词光标**：方向键按音节边界（DAG 全边界）移动，逐段构词即学会新词
 - **精简 vim**：Normal/Insert/Search 三模式，operator × motion / text-object（可关）
 - **键盘布局无关**：物理键（e.code）+ 布局表（qwerty / dvorak / dvorak4tzx，JSON 可覆盖）
-- **触屏虚拟键盘**：底部上拉展开，键面随布局表渲染，按键与物理键盘同一管线；
-  左栏仿真实键盘左缘（`~ Tab ESC Shift Ctrl + 数字/符号两列），sticky 修饰键、
-  中/EN 专用键、长按 ←/→ = Home/End、小红点长按放大镜拖光标；打开时屏蔽系统键盘
+- **触屏虚拟键盘**：底部上拉展开，六排仿真实键盘布局（含 ANSI 错行），
+  键面随布局表渲染，按键与物理键盘同一管线；数字/符号顶部两排直按，
+  双拼时字母键标注自然码韵母（浅绿小字）；sticky 修饰键、中/EN 专用键、
+  长按 ←/→ = Home/End、👆 长按放大镜拖光标；打开时屏蔽系统键盘
 - **词库**：雾凇拼音 [rime-ice](https://github.com/iDvel/rime-ice)（简体、现代词频）
   + [rime-essay](https://github.com/rime/rime-essay) 单字频率表，离线转成紧凑文本格式
 

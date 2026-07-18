@@ -523,10 +523,11 @@ const PORT = process.env.E2E_PORT || 8971;
   check("键盘与 textarea 等宽且左缘对齐", kbAlign.dw < 2 && kbAlign.dl < 2,
         JSON.stringify(kbAlign));
 
-  // 主区/功能列按键按文本匹配；双标签键（数字列）用 firstChild 文本
+  // 按键按 .vkb-cap 标签文本匹配（中/EN、空格等无 cap 的退到 key 文本）
   const vkTap = (t) => page.evaluate((t2) => {
-    for (const k of document.querySelectorAll(".vkb-main .vkb-key, .vkb-fcol .vkb-key")) {
-      if (k.textContent === t2) {
+    for (const k of document.querySelectorAll(".vkb-body .vkb-key")) {
+      const cap = k.querySelector(".vkb-cap");
+      if ((cap ? cap.textContent : k.textContent) === t2) {
         k.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
         k.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
         return true;
@@ -534,20 +535,19 @@ const PORT = process.env.E2E_PORT || 8971;
     }
     return false;
   }, t);
-  const vkDigit = (n) => page.evaluate((n2) => {
-    const el = document.querySelectorAll(".vkb-scols .vkb-key")[n2 === 0 ? 9 : n2 - 1];
-    if (!el) return false;
-    el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-    el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
-    return true;
-  }, n);
+
+  // 双拼韵母标注（默认自然码 + qwerty：c 键带 iao）
+  check("字母键标注韵母（浅绿小字）", await page.evaluate(() =>
+    [...document.querySelectorAll(".vkb-fin")].some((el) => el.textContent.includes("iao"))));
+  check("v/i/u 键标 zh/ch/sh", await page.evaluate(() =>
+    [...document.querySelectorAll(".vkb-sp")].length === 3));
 
   await vkTap("i");
   check("vkb i 进入 INSERT(中)", (await badge()) === "中");
   await vkTap("中");
   check("中/EN 键切到 EN", (await badge()) === "EN");
   const langLabel = await page.evaluate(() => {
-    for (const k of document.querySelectorAll(".vkb-main .vkb-key"))
+    for (const k of document.querySelectorAll(".vkb-body .vkb-key"))
       if (k.textContent === "EN" || k.textContent === "中") return k.textContent;
     return null;
   });
@@ -559,28 +559,37 @@ const PORT = process.env.E2E_PORT || 8971;
 
   // sticky Shift：武装→键面大写→发键出大写→自动解除
   const armed1 = await page.evaluate(() => {
-    for (const k of document.querySelectorAll(".vkb-fcol .vkb-key"))
-      if (k.textContent === "⇧") {
+    for (const k of document.querySelectorAll(".vkb-body .vkb-key")) {
+      const cap = k.querySelector(".vkb-cap");
+      if ((cap ? cap.textContent : k.textContent) === "⇧") {
         k.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
         return k.classList.contains("vkb-armed");
       }
+    }
     return null;
   });
   check("Shift 武装高亮", armed1 === true, String(armed1));
   const labelUp = await page.evaluate(() =>
-    document.querySelectorAll(".vkb-main .vkb-row")[0].children[0].textContent);
-  check("武装后键面变大写", labelUp === "Q", String(labelUp));
+    [...document.querySelectorAll(".vkb-body .vkb-key .vkb-cap")]
+      .some((c) => c.textContent === "Q"));
+  check("武装后键面变大写", labelUp === true, String(labelUp));
   await vkTap("W");
   check("武装后字母出大写", (await value()) === "helloW", await value());
   const armed2 = await page.evaluate(() => {
-    for (const k of document.querySelectorAll(".vkb-fcol .vkb-key"))
-      if (k.textContent === "⇧") return k.classList.contains("vkb-armed");
+    for (const k of document.querySelectorAll(".vkb-body .vkb-key")) {
+      const cap = k.querySelector(".vkb-cap");
+      if ((cap ? cap.textContent : k.textContent) === "⇧") return k.classList.contains("vkb-armed");
+    }
     return null;
   });
   check("发键后武装自动解除", armed2 === false, String(armed2));
 
+  // 第0排符号直按（无需 Shift）
+  await vkTap("!");
+  check("第0排 ! 直按上屏", (await value()) === "helloW!", await value());
+
   await vkTap("⌫");
-  check("⌫ 删除（模拟默认行为）", (await value()) === "hello", await value());
+  check("⌫ 删除（模拟默认行为）", (await value()) === "helloW", await value());
 
   // 中文：点拼音码 → 候选 → 数字键选词
   await vkTap("EN");
@@ -590,7 +599,7 @@ const PORT = process.env.E2E_PORT || 8971;
   check("点拼音码出候选", await popupVisible());
   const idxNi = await candIndex("你好");
   check("候选含你好", idxNi !== null);
-  await vkDigit(idxNi || 1);
+  await vkTap(String(idxNi || 1));
   check("数字键选词上屏", (await value()) === "你好", await value());
 
   await vkTap("ESC");
@@ -603,15 +612,19 @@ const PORT = process.env.E2E_PORT || 8971;
   await setDoc("abcdef", 4);
   await vkTap("i");   // INSERT
   await page.evaluate(() => {
-    for (const k of document.querySelectorAll(".vkb-main .vkb-key"))
-      if (k.textContent === "←")
+    for (const k of document.querySelectorAll(".vkb-body .vkb-key")) {
+      const cap = k.querySelector(".vkb-cap");
+      if ((cap ? cap.textContent : k.textContent) === "←")
         k.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    }
   });
   await page.waitForTimeout(650);
   await page.evaluate(() => {
-    for (const k of document.querySelectorAll(".vkb-main .vkb-key"))
-      if (k.textContent === "←")
+    for (const k of document.querySelectorAll(".vkb-body .vkb-key")) {
+      const cap = k.querySelector(".vkb-cap");
+      if ((cap ? cap.textContent : k.textContent) === "←")
         k.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+    }
   });
   check("长按 ← = Home", (await curPos()) === 0, String(await curPos()));
 
@@ -633,12 +646,7 @@ const PORT = process.env.E2E_PORT || 8971;
     !(await page.evaluate(() => document.querySelector(".vkb-panel").classList.contains("vkb-faded"))));
 
   // ▽ 收起
-  await page.evaluate(() => {
-    const cells = document.querySelectorAll(".vkb-scols .vkb-key");
-    const last = cells[cells.length - 1];
-    last.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-    last.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
-  });
+  await vkTap("▽");
   check("▽ 收起键盘、手柄复现",
     !(await page.isVisible(".vkb-panel")) && await page.isVisible(".vkb-handle"));
   const padB2 = await page.evaluate(() =>

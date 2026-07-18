@@ -64,17 +64,19 @@ imeEditor.attach(document.querySelector("textarea"), {
 
 包内附 `virtual-keyboard.js`：页面底部上拉展开的虚拟键盘，键面随布局表渲染，
 按键经 `ime.sendKey` 注入，与物理键盘完全同一管线。
-左栏仿真实键盘左缘（\`~ Tab ESC Shift Ctrl + 数字/符号两列），
-Shift/Ctrl 为 sticky 单发，中/EN 专用键切换，长按 ←/→ = Home/End，
-小红点长按 = 放大镜拖动光标。触屏打开时 textarea 置 readonly 屏蔽系统键盘。
+六排仿真实键盘布局（含 ANSI 错行）：数字/符号顶部两排直按，左缘功能列
+（\`~ Tab ESC Shift Ctrl），Shift/Ctrl 为 sticky 单发，中/EN 专用键切换，
+长按 ←/→ = Home/End，👆 长按 = 放大镜拖动光标；双拼方案下可给字母键标注韵母。
+触屏打开时 textarea 置 readonly 屏蔽系统键盘。
 
 ```js
 const { imeEditor, virtualKeyboard } = require("@cubao/naive-pinyin");
 const ime = imeEditor.attach(document.querySelector("textarea"), { ... });
 const vkb = virtualKeyboard.attach(ime, document.querySelector("textarea"), {
   coarse: matchMedia("(pointer: coarse)").matches,   // 触屏时才 readonly/自绘光标
+  getShuangpinFinals: () => null,   // 双拼时返回 {键: [韵母]} 则键面标注（可选）
 });
-vkb.setEnabled(true);   // 显示上拉手柄（vkb.refresh() 可在布局变更后重渲键面）
+vkb.setEnabled(true);   // 显示上拉手柄（vkb.refresh() 可在布局/方案变更后重渲键面）
 ```
 
 ## 浏览器（bundler）

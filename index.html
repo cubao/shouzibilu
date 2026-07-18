@@ -171,8 +171,9 @@ x 删字，p P 粘贴，u 撤销，r 替换单字符。
 —— 触屏 ——
 
 底部中间的手柄上拉展开虚拟键盘，键面随布局表渲染（设置里可关/强制开）。
+数字符号顶部两排直按；双拼时字母键标注自然码韵母（浅绿小字）。
 Shift/Ctrl 点一下武装一次；中/EN 键切换；长按 ←/→ = Home/End；
-长按小红点 = 放大镜拖动光标。键盘展开时系统输入法不会弹出。
+长按 👆 = 放大镜拖动光标。键盘展开时系统输入法不会弹出。
 
 你的文字和输入习惯只存在这个浏览器里，哪儿也不去。
 `;
@@ -181,7 +182,26 @@ let Module, dictData, ziranma;
 let engineCtx = null;
 let ime = null;
 let vkb = null;
+let spFinals = null;   // 键 -> [韵母]（自然码反查表，双拼键面标注用）
 let loadMs = "?";
+
+// 从双拼码表（编码->拼音）反推每个键携带的韵母：只取声母编码
+// （零声母二字拼如 ai/er 按字面打，不占键位标注）；zh/ch/sh = v/i/u 三键。
+function buildShuangpinFinals(map) {
+  const finals = {};
+  for (const [code, py] of Object.entries(map)) {
+    if (code.length !== 2) continue;
+    const c1 = code[0], c2 = code[1];
+    let fin;
+    if ("bpmfdtnlgkhjqxrzcsyw".includes(c1)) fin = py.slice(1);
+    else if (c1 === "v" || c1 === "i" || c1 === "u") fin = py.slice(2);
+    else continue;
+    (finals[c2] = finals[c2] || new Set()).add(fin);
+  }
+  const out = {};
+  for (const k of Object.keys(finals)) out[k] = [...finals[k]].sort();
+  return out;
+}
 
 function vkbApplySetting() {
   if (vkb) vkb.setEnabled(vkbSel.value === "on" || (vkbSel.value === "auto" && coarse));
@@ -260,8 +280,13 @@ async function boot() {
   editor.value = saved != null ? saved : DEFAULT_TEXT;
   const draft = localStorage.getItem(LS_MAPPINGS_DRAFT);
   mappingsTa.value = draft != null ? draft : JSON.stringify(loadMappings(), null, 2);
+  spFinals = buildShuangpinFinals(ziranma.shuangpin.map);
   attachEditor();
-  vkb = VirtualKeyboard.attach(ime, editor, { coarse });
+  vkb = VirtualKeyboard.attach(ime, editor, {
+    coarse,
+    // 仅双拼方案下给键面韵母标注（全拼不标）
+    getShuangpinFinals: () => schemeSel.value === "ziranma" ? spFinals : null,
+  });
   vkbApplySetting();
   setInterval(persistAll, 10000);
   window.addEventListener("pagehide", persistAll);
@@ -347,7 +372,11 @@ function attachEditor() {
 }
 
 // ---------- 控件 ----------
-schemeSel.onchange = () => { rebuildEngine(); saveSettings(); editor.focus(); };
+schemeSel.onchange = () => {
+  rebuildEngine();
+  if (vkb) vkb.refresh();   // 双拼↔全拼：键面韵母标注开关
+  saveSettings(); editor.focus();
+};
 fuzzyBox.onchange = () => { rebuildEngine(); saveSettings(); editor.focus(); };
 layoutSel.onchange = () => {
   ime.setOption({layout: layoutSel.value});
