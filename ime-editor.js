@@ -338,6 +338,9 @@ function attach(textarea, opts) {
   let searchDir = 1;
   let searchBuf = "";
   let searchComp = "";            // 搜索框内的 IME 组合串
+  let searchCands = [];            // 搜索框内的候选
+  let searchStartPos = 0;          // 进入搜索时的光标（incsearch 基点 / Esc 还原点）
+  let hlActive = false;            // 搜索接受后高亮保留中
   let preferredCol = null;        // j/k 列记忆
 
   const PAGE_SIZE = 9;
@@ -357,6 +360,26 @@ function attach(textarea, opts) {
   mirror.style.cssText = "position:absolute;left:-9999px;top:0;white-space:pre-wrap;" +
     "word-wrap:break-word;overflow-wrap:break-word;visibility:hidden;";
   document.body.appendChild(mirror);
+
+  // 搜索高亮 backdrop：textarea 背景透明，底下垫同步滚动的 <mark> 层
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "position:relative;display:block;";
+  const hadFocus = document.activeElement === textarea;
+  textarea.parentNode.insertBefore(wrap, textarea);
+  const backdrop = document.createElement("div");
+  backdrop.className = "ime-backdrop";
+  backdrop.setAttribute("aria-hidden", "true");
+  wrap.appendChild(backdrop);
+  wrap.appendChild(textarea);
+  if (hadFocus) textarea.focus();
+  const taBg = getComputedStyle(textarea).backgroundColor;
+  backdrop.style.cssText =
+    "position:absolute;inset:0;overflow:hidden;white-space:pre-wrap;" +
+    "word-wrap:break-word;overflow-wrap:break-word;color:transparent;" +
+    "pointer-events:none;background:" +
+    (taBg === "rgba(0, 0, 0, 0)" || taBg === "transparent" ? "#fff" : taBg) + ";";
+  textarea.style.background = "transparent";
+  textarea.style.position = "relative";
 
   // NORMAL 模式的 block 光标（vim 风格反色块）
   const blockCaret = document.createElement("div");
@@ -389,6 +412,45 @@ function attach(textarea, opts) {
       width: marker.offsetWidth,
       lineHeight: lh,
     };
+  }
+
+  // 搜索高亮：把 pat 的所有命中包 <mark>，当前光标处命中用 ime-hl-cur
+  function refreshHighlights() {
+    const pat = mode === "SEARCH" ? searchBuf
+              : (hlActive && lastSearch ? lastSearch.pat : "");
+    const v = val();
+    const cs = getComputedStyle(textarea);
+    for (const p of ["fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing",
+                     "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+                     "borderTopWidth", "borderRightWidth", "borderBottomWidth",
+                     "borderLeftWidth", "tabSize", "boxSizing"]) {
+      backdrop.style[p] = cs[p];
+    }
+    backdrop.style.borderStyle = "solid";
+    backdrop.style.borderColor = "transparent";
+    if (!pat) { backdrop.textContent = v + "​"; return; }
+    let html = "", pos = 0;
+    const curP = cur();
+    for (let idx = v.indexOf(pat, pos); idx >= 0; idx = v.indexOf(pat, pos)) {
+      html += escapeHtml(v.slice(pos, idx)) +
+              (idx === curP ? '<mark class="ime-hl-cur">' : "<mark>") +
+              escapeHtml(v.slice(idx, idx + pat.length)) + "</mark>";
+      pos = idx + pat.length;
+    }
+    backdrop.innerHTML = html + escapeHtml(v.slice(pos)) + "​";
+    backdrop.scrollTop = textarea.scrollTop;
+    backdrop.scrollLeft = textarea.scrollLeft;
+  }
+
+  // incsearch：从进入搜索时的光标处找当前 searchBuf 的命中并跳过去
+  function incSearchJump() {
+    if (!searchBuf) { setCur(searchStartPos); return; }
+    const v = val();
+    let idx = searchDir > 0
+      ? v.indexOf(searchBuf, searchStartPos)
+      : v.lastIndexOf(searchBuf, Math.max(0, searchStartPos - 1));
+    if (idx < 0 && searchDir < 0) idx = v.lastIndexOf(searchBuf);
+    if (idx >= 0) setCur(idx);
   }
 
   function updateBlockCaret() {
@@ -440,6 +502,7 @@ function attach(textarea, opts) {
     textarea.value = newValue;
     setCur(newCursor);
     lastValue = newValue;
+    refreshHighlights();
   }
   function insertAt(text, pos) {
     const v = val();
@@ -452,6 +515,7 @@ function attach(textarea, opts) {
       pushUndo();
       lastValue = textarea.value;
     }
+    refreshHighlights();
   });
 
   // ---------- 键解析 ----------
@@ -630,9 +694,29 @@ function attach(textarea, opts) {
   }
 
   function renderSearch() {
-    const comp = searchComp ? " [" + searchComp + "]" : "";
-    showPopup(`<div>${searchDir > 0 ? "/" : "?"}${escapeHtml(searchBuf)}` +
-      '<span class="ime-caret"></span>' + escapeHtml(comp) + "</div>");
+    let html = `<div>${searchDir > 0 ? "/" : "?"}${escapeHtml(searchBuf)}` +
+               '<span class="ime-caret"></span>' + escapeHtml(searchComp) + "</div>";
+    searchCands = [];
+    if (searchComp && !english) {
+      const r = engine().query(searchComp);
+      searchCands = (r.candidates || []).slice(0, PAGE_SIZE);
+    }
+    if (searchCands.length) {
+      html += '<div>' + searchCands.map((c, i) =>
+        `<span class="ime-cand" data-sc="${i}" style="cursor:pointer;margin-right:12px">` +
+        `<span style="color:#999;font-size:12px">${i + 1}</span> ${escapeHtml(c.text)}</span>`
+      ).join("") + "</div>";
+    }
+    showPopup(html);
+    popup.querySelectorAll(".ime-cand[data-sc]").forEach((el) => {
+      el.addEventListener("mousedown", (ev) => {
+        ev.preventDefault();
+        const c = searchCands[+el.dataset.sc];
+        if (c) { searchBuf += c.text; searchComp = ""; renderSearch(); }
+      });
+    });
+    incSearchJump();
+    refreshHighlights();
   }
 
   // ---------- 标点 ----------
@@ -973,7 +1057,11 @@ function attach(textarea, opts) {
       return true;
     }
 
-    if (key === "Escape") { pendingOp = null; pendingIA = null; pendingG = false; return true; }
+    if (key === "Escape") {
+      pendingOp = null; pendingIA = null; pendingG = false;
+      if (hlActive) { hlActive = false; refreshHighlights(); }   // Esc = :noh
+      return true;
+    }
 
     // gg（可带 operator：dgg/ygg/cgg）——必须先于 pendingOp 判断
     if (pendingG) {
@@ -1093,55 +1181,65 @@ function attach(textarea, opts) {
       case "/": case "?": {
         searchDir = ch === "/" ? 1 : -1;
         searchBuf = ""; searchComp = "";
+        searchStartPos = cur();
+        hlActive = false;
         setMode("SEARCH");
         renderSearch();
         return true;
       }
-      case "n": if (lastSearch) doSearch(lastSearch.pat, lastSearch.dir); return true;
-      case "N": if (lastSearch) doSearch(lastSearch.pat, -lastSearch.dir); return true;
+      case "n": if (lastSearch) { doSearch(lastSearch.pat, lastSearch.dir); refreshHighlights(); } return true;
+      case "N": if (lastSearch) { doSearch(lastSearch.pat, -lastSearch.dir); refreshHighlights(); } return true;
       default: return true;   // Normal 模式吞掉一切可打印键
     }
   }
 
-  // Search 模式按键（迷你 Insert：IME 激活，可输中文）
+  // Search 模式按键（遵循当前 en/cn 状态：cn 下 IME 组词，en 下字面输入）
   function onSearchKey(e) {
     const key = e.key;
     if (key === "Shift") { shiftLone = true; return false; }
     shiftLone = false;
     if (key === "Escape") {
       if (searchComp) { searchComp = ""; renderSearch(); }
-      else setMode(cfg.vim ? "NORMAL" : "INSERT");
+      else {   // 取消搜索：光标回起点、清高亮（先退模式再刷新，否则 pat 仍取 searchBuf）
+        setCur(searchStartPos);
+        hlActive = false;
+        setMode(cfg.vim ? "NORMAL" : "INSERT");
+        refreshHighlights();
+      }
       return true;
     }
     if (key === "Enter") {
       if (searchComp) { searchBuf += searchComp; searchComp = ""; renderSearch(); }
-      else {
+      else {   // 接受搜索：光标已在 incsearch 命中处，高亮保留
         lastSearch = { pat: searchBuf, dir: searchDir };
-        doSearch(searchBuf, searchDir);
+        hlActive = true;
+        refreshHighlights();
         setMode(cfg.vim ? "NORMAL" : "INSERT");
       }
       return true;
     }
     if (key === "Backspace") {
-      if (searchComp) searchComp = searchComp.slice(0, -1);
-      else if (searchBuf) searchBuf = searchBuf.slice(0, -1);
-      else setMode(cfg.vim ? "NORMAL" : "INSERT");
-      renderSearch();
+      if (searchComp) { searchComp = searchComp.slice(0, -1); renderSearch(); }
+      else if (searchBuf) { searchBuf = searchBuf.slice(0, -1); renderSearch(); }
+      else {
+        setCur(searchStartPos);
+        hlActive = false;
+        setMode(cfg.vim ? "NORMAL" : "INSERT");
+        refreshHighlights();
+      }
       return true;
     }
     const ch = resolveChar(e);
     if (ch == null) return true;
-    if (/^[a-z]$/.test(ch)) {
-      searchComp += ch;
-      // 搜索框内候选：直接在提示行显示首候选预览（简化：不上屏候选列表）
+    if (english) {   // EN：搜索串 = 字面文本
+      searchBuf += ch;
       renderSearch();
       return true;
     }
+    if (/^[a-z]$/.test(ch)) { searchComp += ch; renderSearch(); return true; }
     if (ch === " ") {
       if (searchComp) {
-        const r = engine().query(searchComp);
-        const c = r.candidates && r.candidates[0];
-        searchBuf += c ? c.text : searchComp;
+        searchBuf += searchCands.length ? searchCands[0].text : searchComp;
         searchComp = "";
       } else searchBuf += " ";
       renderSearch();
@@ -1149,8 +1247,7 @@ function attach(textarea, opts) {
     }
     if (/^[0-9]$/.test(ch)) {
       if (searchComp) {
-        const r = engine().query(searchComp);
-        const c = r.candidates && r.candidates[parseInt(ch, 10) - 1];
+        const c = searchCands[parseInt(ch, 10) - 1];
         if (c) { searchBuf += c.text; searchComp = ""; }
       } else searchBuf += ch;
       renderSearch();
@@ -1183,7 +1280,10 @@ function attach(textarea, opts) {
           composition = ""; caret = 0; page = 0;
           refreshSegment(); refreshCandidates(); render();
         } else if (cfg.vim) { leaveInsert(); setMode("NORMAL"); }
-      } else { pendingOp = null; pendingIA = null; pendingG = false; pendingFind = null; }
+      } else {
+        pendingOp = null; pendingIA = null; pendingG = false; pendingFind = null;
+        if (hlActive) { hlActive = false; refreshHighlights(); }
+      }
       return;
     }
     if (e.metaKey || e.ctrlKey || e.altKey) return;   // 组合键放行
@@ -1206,6 +1306,10 @@ function attach(textarea, opts) {
           composition = ""; caret = 0;
           refreshSegment(); refreshCandidates(); render();
         }
+        if (english && mode === "SEARCH" && searchComp) {  // 搜索框组合串原样入串
+          searchBuf += searchComp; searchComp = "";
+          renderSearch();
+        }
         cfg.onMode(mode, english);
       }
     }
@@ -1214,12 +1318,18 @@ function attach(textarea, opts) {
   function onScrollOrResize() {
     if (popup.style.display !== "none") render();
     updateBlockCaret();
+    backdrop.scrollTop = textarea.scrollTop;
+    backdrop.scrollLeft = textarea.scrollLeft;
   }
 
   textarea.addEventListener("keydown", onKeydown);
   textarea.addEventListener("focus", updateBlockCaret);
   textarea.addEventListener("blur", updateBlockCaret);
   textarea.addEventListener("click", updateBlockCaret);
+  textarea.addEventListener("scroll", () => {
+    backdrop.scrollTop = textarea.scrollTop;
+    backdrop.scrollLeft = textarea.scrollLeft;
+  });
   document.addEventListener("keyup", onKeyup);
   window.addEventListener("scroll", onScrollOrResize, true);
   window.addEventListener("resize", onScrollOrResize);
@@ -1229,7 +1339,9 @@ function attach(textarea, opts) {
   style.textContent =
     ".ime-caret{display:inline-block;width:2px;height:1.1em;background:#4a90d9;" +
     "vertical-align:text-bottom;margin:0 -1px;animation:ime-blink 1s step-start infinite}" +
-    "@keyframes ime-blink{50%{opacity:0}}";
+    "@keyframes ime-blink{50%{opacity:0}}" +
+    ".ime-backdrop mark{background:#ffe58a;color:transparent;border-radius:2px}" +
+    ".ime-backdrop mark.ime-hl-cur{background:#ffab4d}";
   document.head.appendChild(style);
 
   // 初始模式
@@ -1257,6 +1369,9 @@ function attach(textarea, opts) {
       window.removeEventListener("scroll", onScrollOrResize, true);
       window.removeEventListener("resize", onScrollOrResize);
       textarea.style.caretColor = "";
+      textarea.style.background = "";
+      wrap.parentNode.insertBefore(textarea, wrap);   // 还原 DOM
+      wrap.remove();
       popup.remove(); mirror.remove(); style.remove(); blockCaret.remove();
     },
   };

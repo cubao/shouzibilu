@@ -151,7 +151,9 @@ make dict cli
 `f F t T` `/ ?`+`n N`；operator `d c y >`（`dd cc yy >> <<`），text object
 `iw aw`、引号（含中文弯引号）、括号（含（）【】《》「」）；`x p P u`；
 `i a o O` 进插入。Normal 模式显示 block 块光标（原生细光标隐藏）。
-搜索行是迷你插入模式（可打拼音搜中文）。Esc 别名：`Ctrl+[`、`Ctrl+C`。
+搜索遵循当前中/英状态：中文态可打拼音出候选选词，英文态字面输入；
+incsearch 实时跳转 + 全文高亮（当前命中橙色），接受后高亮保留（`n`/`N` 导航），
+Normal 下 Esc 清除高亮；搜索中 Esc 取消并还原光标。Esc 别名：`Ctrl+[`、`Ctrl+C`。
 明确不做：`.`、Visual、宏、正则、计数。
 
 **已知边界**：OS 级中文输入法激活时按键会被系统吞掉，网页无法压制——

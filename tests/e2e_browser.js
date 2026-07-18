@@ -342,6 +342,60 @@ const PORT = process.env.E2E_PORT || 8971;
   check(">> 后光标在 ^ 处", (await curPos()) === 4, String(await curPos()));
   await setDoc("", 0);
 
+  // ---------- 11. 搜索修复：en/cn 遵循 / 候选列表 / 实时高亮 / Esc 取消与清除 ----------
+  const hlCount = () => page.evaluate(() =>
+    document.querySelectorAll(".ime-backdrop mark").length);
+
+  // EN 模式搜索 = 字面输入，不出候选
+  await setDoc("bar foo bar", 0);
+  await page.keyboard.press("i");
+  await page.keyboard.press("Shift");   // EN
+  await page.keyboard.press("Escape");  // NORMAL（english 标记保持）
+  await page.keyboard.press("/");
+  await page.keyboard.type("bar");
+  check("EN 搜索无候选菜单", (await dynCandCount()) === 0);
+  check("EN 搜索实时高亮", (await hlCount()) === 2, String(await hlCount()));
+  check("incsearch 已跳转", (await curPos()) === 0, String(await curPos()));
+  await page.keyboard.press("Enter");
+  check("EN 搜索接受后回 NORMAL", (await badge()) === "NORMAL");
+  check("接受后高亮保留", (await hlCount()) === 2);
+  await page.keyboard.press("n");
+  check("n 跳到下一个", (await curPos()) === 8, String(await curPos()));
+  await page.keyboard.press("Escape");
+  check("NORMAL Esc 清高亮", (await hlCount()) === 0);
+  await page.keyboard.press("i");
+  await page.keyboard.press("Shift");   // 切回中文
+  await page.keyboard.press("Escape");  // NORMAL
+
+  // CN 搜索出候选列表 + Esc 取消还原
+  await setDoc("你好世界你好", 0);
+  await page.keyboard.press("/");
+  await page.keyboard.type("uijx");
+  check("CN 搜索出候选列表", (await dynCandCount()) > 0);
+  const idxSj = await candIndex("世界");
+  check("CN 搜索候选含世界", idxSj !== null);
+  await page.keyboard.press(String(idxSj || 1));
+  check("候选入搜索串后高亮", (await hlCount()) === 1, String(await hlCount()));
+  await page.keyboard.press("Escape");
+  check("Esc 取消还原光标", (await curPos()) === 0, String(await curPos()));
+  check("Esc 取消清高亮", (await hlCount()) === 0);
+  check("Esc 取消回 NORMAL", (await badge()) === "NORMAL");
+
+  // ? 反向搜索
+  await setDoc("ab ab ab", 8);
+  await page.keyboard.press("Shift+Slash");   // ? （playwright 直按 ? 不带 shift 态）
+  await page.keyboard.press("Shift");   // 搜索内 Shift 切 EN（跟随 en/cn 状态）
+  await page.keyboard.type("ab");
+  check("? 反向 incsearch", (await curPos()) === 6, String(await curPos()));
+  await page.keyboard.press("Enter");
+  check("? 接受", (await badge()) === "NORMAL");
+  await page.keyboard.press("Escape");  // 清高亮
+  await setDoc("", 0);
+  // EN 标记复位（ Shift 在搜索里切了一次，现在是 EN；切回中文）
+  await page.keyboard.press("i");
+  await page.keyboard.press("Shift");
+  await page.keyboard.press("Escape");
+
   await browser.close();
   server.kill();
   console.log("----");
