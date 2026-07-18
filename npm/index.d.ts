@@ -18,6 +18,13 @@ declare module "@cubao/naive-pinyin" {
     error?: string;
   }
 
+  export interface SegmentResult {
+    input: string;
+    boundaries: number[];  // 组词光标站位（音节 DAG 全边界）
+    path: number[];        // 贪心最长边主切分（preedit 显示用）
+    error?: string;
+  }
+
   export interface UserFreqEntry {
     pinyin: string;
     word: string;
@@ -40,6 +47,7 @@ declare module "@cubao/naive-pinyin" {
       dictData?: Uint8Array
     ): Promise<Engine>;
     query(input: string): QueryResult;
+    segment(input: string): SegmentResult;
     commit(segments: Segment[]): void;
     learnWord(key: string, word: string): void;
     dumpUser(): UserFreqEntry[];
@@ -51,4 +59,18 @@ declare module "@cubao/naive-pinyin" {
     config?: EngineConfig,
     dictData?: Uint8Array
   ): Promise<Engine>;
+
+  // 浏览器 IME 编辑器（ime-editor.js）：textarea 全键盘接管 + 候选弹窗
+  // + 动态词 + 精简 vim。仅在浏览器环境可用。
+  export interface ImeEditorApi {
+    attach(textarea: HTMLTextAreaElement, opts: Record<string, unknown>): {
+      setOption(o: Record<string, unknown>): void;
+      getMode(): { mode: string; english: boolean };
+      focus(): void;
+      destroy(): void;
+    };
+    LAYOUTS: Record<string, Record<string, [string, string]>>;
+    DEFAULT_MAPPINGS: Record<string, string>;
+  }
+  export const imeEditor: ImeEditorApi;
 }

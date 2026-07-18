@@ -98,6 +98,22 @@ const PORT = process.env.E2E_PORT || 8971;
   await page.selectOption("#layout", "qwerty");
   await page.click("#editor");
 
+  // ---------- 0. 首访默认文字 / 控件 tooltip ----------
+  check("首次打开显示介绍文字",
+        (await value()).includes("手自笔录 · 网页里的中文输入法"));
+  const hasTitles = await page.evaluate(() =>
+    ["keyMode", "layout", "scheme", "vim", "fuzzy", "punct", "paging",
+     "exportBtn", "importBtn", "clearBtn", "resetBtn"]
+      .every((id) => {
+        const el = document.getElementById(id);
+        return el && (el.title || (el.closest("label") || {}).title);
+      }));
+  check("控件都有悬停说明", hasTitles);
+  await page.evaluate(() => {   // 清场进入后续测试
+    const ed = document.getElementById("editor");
+    ed.value = ""; ed.dispatchEvent(new Event("input"));
+  });
+
   // ---------- 1. vim 模式基础 ----------
   check("启动默认 NORMAL", (await badge()) === "NORMAL");
   await page.keyboard.press("i");
@@ -501,6 +517,20 @@ const PORT = process.env.E2E_PORT || 8971;
   check("重载后映射草稿恢复", taVal.includes("draft-test"), taVal);
   await setDoc("", 0);
   await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+
+  // ---------- 13. 重置按钮恢复默认文字 ----------
+  await setDoc("被覆盖的内容", 0);
+  await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+  await page.reload({ waitUntil: "load" });
+  await page.waitForFunction(() =>
+    document.getElementById("status").textContent.includes("词典"), { timeout: 30000 });
+  check("重置前内容已持久化", (await value()) === "被覆盖的内容", await value());
+  page.once("dialog", (d) => d.accept());
+  await page.click("#resetBtn");
+  check("重置恢复介绍文字",
+        (await value()).includes("手自笔录 · 网页里的中文输入法"));
+  check("重置后立即持久化", await page.evaluate(() =>
+    localStorage.getItem("shouzibilu.content").includes("手自笔录")));
 
   await browser.close();
   server.kill();

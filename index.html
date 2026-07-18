@@ -45,41 +45,42 @@
 <h1>手自笔录 (shǒuzìbǐlù)</h1>
 <div class="bar">
   键盘:
-  <select id="keyMode">
+  <select id="keyMode" title="按键识别方式&#10;物理键 (e.code)：按键盘物理位置识别，配合布局表翻译成字母——系统键盘布局怎么设都不影响（推荐，可完全屏蔽系统布局）&#10;字母 (e.key)：按系统实际产出的字母识别（系统是 Dvorak 就出 Dvorak 字母）">
     <option value="physical" selected>物理键 (e.code)</option>
     <option value="letter">字母 (e.key)</option>
   </select>
   布局:
-  <select id="layout">
+  <select id="layout" title="键盘布局表（物理键模式下把物理键位翻译成字母）&#10;QWERTY:      qwertyuiop / asdfghjkl / zxcvbnm&#10;Dvorak:      ',.pyfgcrl / aoeuidhtns / ;qjkxbmwvz&#10;Dvorak4TZX:  ;,.kyfgclz / aoeiudrtsn / pqjhxbmwv（本站作者的 Dvorak 变体）">
     <option value="qwerty">QWERTY</option>
     <option value="dvorak">Dvorak</option>
     <option value="dvorak4tzx" selected>Dvorak4TZX</option>
   </select>
   方案:
-  <select id="scheme">
+  <select id="scheme" title="拼音方案&#10;双拼·自然码：每个音节恒 2 键（声母+韵母各一键），如 你好 = nihk&#10;全拼：完整拼音，如 你好 = nihao">
     <option value="ziranma">双拼 · 自然码</option>
     <option value="full">全拼</option>
   </select>
-  <label><input type="checkbox" id="vim" checked> vim</label>
+  <label title="精简 vim：NORMAL（移动/操作）/ 插入（输入+输入法）/ SEARCH（查找）&#10;Esc 回 NORMAL（Ctrl+[、Ctrl+C 同效），i 进插入&#10;操作: d c y > 配合移动/文本对象；dd cc yy >> << 整行&#10;移动: h j k l、0 ^ $、w b e（每汉字一词）、gg G、%、f F t T&#10;文本对象: iw aw、引号（含 “”‘’）、括号（含 （）【】《》「」）&#10;查找: / ?（可打拼音搜中文），n N 重复；u 撤销；r 替换单字符"><input type="checkbox" id="vim" checked> vim</label>
   <br />
-  <span id="mode">…</span>
-  <label><input type="checkbox" id="fuzzy" checked> 模糊音</label>
+  <span id="mode" title="当前模式：NORMAL 普通 / 插入（中·EN） / SEARCH 查找">…</span>
+  <label title="模糊音：z=zh、c=ch、s=sh、in=ing、en=eng 混同匹配"><input type="checkbox" id="fuzzy" checked> 模糊音</label>
   符号:
-  <select id="punct">
+  <select id="punct" title="标点键上屏的符号风格&#10;中文：，。；《》“”&#10;英文：,.;<> 直出&#10;繁体：，。；《》「」">
     <option value="zh">中文符号</option>
     <option value="en">英文符号</option>
     <option value="tw">繁体符号</option>
   </select>
   翻页:
-  <select id="paging">
+  <select id="paging" title="候选翻页键（仅在拼音输入中生效；PgUp/PgDn 总是可用）&#10;空缓冲时 , 是动态词触发（,check → ✅）">
     <option value=",." selected>, .</option>
     <option value="-=">- =</option>
     <option value="[]">[ ]</option>
     <option value="pg">仅 PgUp/PgDn</option>
   </select>
-  <button id="exportBtn">导出</button>
-  <button id="importBtn">导入</button>
-  <button id="clearBtn">清空学习</button>
+  <button id="exportBtn" title="导出调频与自造词学习数据（JSON 文件）">导出</button>
+  <button id="importBtn" title="导入学习数据（JSON 数组，与导出格式一致）">导入</button>
+  <button id="clearBtn" title="清空全部调频与自造词学习数据（localStorage）">清空学习</button>
+  <button id="resetBtn" title="恢复编辑器初始介绍文字（当前内容会被覆盖，可先复制保存）">重置</button>
   <input type="file" id="importFile" accept=".json" style="display:none">
 </div>
 <textarea id="editor" autocomplete="off" autocorrect="off" autocapitalize="off"
@@ -117,6 +118,47 @@ const LS_SETTINGS = "shouzibilu.settings";
 const LS_MAPPINGS = "shouzibilu.mappings";
 const LS_CONTENT = "shouzibilu.content";
 const LS_MAPPINGS_DRAFT = "shouzibilu.mappings_draft";
+
+// 初始介绍文字（首次打开 / 点「重置」时恢复）
+const DEFAULT_TEXT = `手自笔录 · 网页里的中文输入法
+
+「家贫，无从致书以观，每假借于藏书之家，手自笔录，计日以还。」
+—— 明·宋濂《送东阳马生序》
+
+AI 时代，留一个独立的中文输入环境，手写一点文字。
+本页不依赖系统输入法：网页监听按键、自带拼音引擎。
+使用前请把系统输入法切到英文状态。
+
+—— 中文输入 ——
+
+按 i 进入插入模式，直接打拼音（默认双拼·自然码，可在上方切全拼）。
+空格/数字选字，, . 翻页，标点键首选上屏并出标点。
+Backspace 逐字母删，Esc 清空，回车把字母原样上屏。
+
+组词光标（这样学新词）：打完一长串编码后按 ← →，光标按音节移动，
+候选只查光标前面的部分；逐段选定，整词就自动学会了。
+比如 wo de dk dp：左移两下到 wode 选「我的」，左移一下到 dk 选「刀」，
+再选 dp 为「盾」——「我的刀盾」从此一打整串就出。
+
+动态词：, 先上屏逗号，紧跟小写字母转成映射。
+,check → ✅，,date → 今天，,time → 现在。
+逗号后面是空格或其他键就是普通逗号，写作完全无感。
+
+Shift 单击切换中/英文；Shift+字母 = 上屏首选再写大写。
+
+—— vim ——
+
+Esc 回普通模式（Ctrl+[、Ctrl+C 同效）。i 插入，a 附插，
+A 行尾插入，I 行首非空白插入，o/O 上下开新行。
+移动：h j k l、0 ^ $、w b e（每个汉字一词）、gg G、%、
+f F t T 行内找字符。查找：/ 向下 ? 向上（可打拼音搜中文），
+n N 重复。操作：d c y > 配移动或文本对象；dd cc yy >> << 整行；
+x 删字，p P 粘贴，u 撤销，r 替换单字符。
+文本对象：iw aw、引号（含 “” ‘’）、括号（含 （）【】《》「」）。
+比如 diw 删一词，ci( 改括号内，da“ 连引号删。
+
+你的文字和输入习惯只存在这个浏览器里，哪儿也不去。
+`;
 
 let Module, dictData, ziranma;
 let engineCtx = null;
@@ -190,8 +232,9 @@ async function boot() {
   if (s.paging) pagingSel.value = s.paging;
 
   rebuildEngine();
-  // 恢复上次内容与映射草稿
-  editor.value = localStorage.getItem(LS_CONTENT) || "";
+  // 恢复上次内容与映射草稿（首次打开显示介绍文字）
+  const saved = localStorage.getItem(LS_CONTENT);
+  editor.value = saved != null ? saved : DEFAULT_TEXT;
   const draft = localStorage.getItem(LS_MAPPINGS_DRAFT);
   mappingsTa.value = draft != null ? draft : JSON.stringify(loadMappings(), null, 2);
   attachEditor();
@@ -347,6 +390,16 @@ importFile.onchange = async () => {
     status.textContent = "导入失败: " + e.message;
   }
   importFile.value = "";
+};
+
+// 重置：恢复初始介绍文字
+document.getElementById("resetBtn").onclick = () => {
+  if (!confirm("恢复初始介绍文字？当前内容会被覆盖（可先复制保存）。")) return;
+  editor.value = DEFAULT_TEXT;
+  editor.selectionStart = editor.selectionEnd = 0;
+  editor.dispatchEvent(new Event("input"));
+  persistAll();
+  editor.focus();
 };
 
 document.getElementById("clearBtn").onclick = () => {

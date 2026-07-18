@@ -67,6 +67,15 @@ class Engine {
     return JSON.parse(s);
   }
 
+  // 音节边界（组词光标）：{ input, boundaries, path }
+  // boundaries = 音节 DAG 上从起点可达的所有位置（光标站位）；
+  // path = 贪心最长边主切分（preedit 分词显示用）。
+  segment(input) {
+    const s = this.M.ccall("np_segment", "string", ["number", "string"],
+                           [this.ctx, input]);
+    return JSON.parse(s);
+  }
+
   // 提交候选分段（动态调频）。segments 取自 query 结果。
   commit(segments) {
     this.M.ccall("np_commit", null, ["number", "string"],
@@ -98,4 +107,7 @@ module.exports = {
   Engine,
   ziranma,
   createEngine: (config, dictData) => Engine.create(config, dictData),
+  // 浏览器 IME 编辑器（textarea 接管 + 候选弹窗 + 动态词 + 精简 vim）。
+  // 懒加载：require 时不碰 DOM，仅在浏览器中 attach 时才需要。
+  get imeEditor() { return require("./ime-editor.js"); },
 };

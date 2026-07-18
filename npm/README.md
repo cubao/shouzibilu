@@ -31,6 +31,33 @@ engine.learnWord("tang zhi xiong", "唐志雄");
 // 持久化：导出叠加层，下次经 config.user_freq 回传
 const saved = engine.dumpUser();
 engine.destroy();
+
+// 音节边界（组词光标）：
+engine.segment("wodedkdp");
+// => { input, boundaries: [0,2,4,6,8], path: [0,2,4,6,8] }
+// boundaries = 音节 DAG 全边界（歧义切分的所有边界都可达）；
+// path = 贪心最长边主切分（preedit 分词显示用）。
+```
+
+## 浏览器 IME 编辑器（ime-editor）
+
+包内附 `ime-editor.js`：接管 `<textarea>` 全部键盘输入的完整编辑器——
+物理键/字母双模式（布局表 qwerty/dvorak/dvorak4tzx，可自定义）、
+候选弹窗悬停光标、组词光标学词、动态词（`,date` → 日期）、
+精简 vim（Normal/Insert/Search，operator × motion / text-object）。
+
+```js
+const { createEngine, ziranma, imeEditor } = require("@cubao/naive-pinyin");
+const engine = await createEngine({ shuangpin: ziranma.shuangpin });
+// Engine 实例的方法名与编辑器适配器一一对应
+imeEditor.attach(document.querySelector("textarea"), {
+  getEngine: () => engine,
+  layout: "dvorak4tzx",     // qwerty | dvorak | dvorak4tzx | 自定义表
+  keyMode: "physical",      // physical(e.code+布局表) | letter(e.key)
+  vim: true,
+  mappings: { ",check": "✅",
+              ",date": "eval:return new Date().toLocaleDateString('sv')" },
+});
 ```
 
 ## 浏览器（bundler）

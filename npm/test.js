@@ -39,6 +39,19 @@ function assert(cond, msg) {
   assert(dump.some(e => e.word === "唐志雄" && e.pinyin === "tang zhi xiong"),
          `导出自造词 (共 ${dump.length} 条)`);
 
+  // segment: 双拼恒 2 键一站 + 主切分路径
+  const seg = engine.segment("wodedkdp");
+  assert(JSON.stringify(seg.boundaries) === "[0,2,4,6,8]",
+         "segment 双拼 DAG 边界");
+  assert(JSON.stringify(seg.path) === "[0,2,4,6,8]",
+         "segment 主切分路径");
+
+  // imeEditor 导出（Node 下只加载不 attach，不碰 DOM）
+  const { imeEditor } = require("./index.js");
+  assert(imeEditor && typeof imeEditor.attach === "function" &&
+         imeEditor.LAYOUTS.dvorak4tzx && imeEditor.DEFAULT_MAPPINGS[",check"],
+         "imeEditor 导出可用");
+
   engine.destroy();
   console.log("----\nnpm package test: OK");
 })().catch(e => {

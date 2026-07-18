@@ -22,8 +22,8 @@ AI 时代，留一个独立的中文输入环境，手写一点文字。
 - **词库**：雾凇拼音 [rime-ice](https://github.com/iDvel/rime-ice)（简体、现代词频）
   + [rime-essay](https://github.com/rime/rime-essay) 单字频率表，离线转成紧凑文本格式
 
-**明确不做**：简拼、编辑距离纠错、繁简切换、标点处理、英文混输、Lua。
-动态调频（越打越准）v1 不做，架构预留，v2 再加。
+**明确不做**：简拼、编辑距离纠错、繁简切换、Lua、云词库。
+（标点三种风格、Shift 中英切换 + 大写直通、动态调频、自造词学习均已实现。）
 
 ## 目录结构
 
@@ -43,20 +43,22 @@ data/                  生成的词典（naive_pinyin.dict.txt 已入库；jieba
 ## npm 包（@cubao/naive-pinyin）
 
 `npm/` 目录即 npm 包：薄 JS 封装（隐藏 ccall 样板）+ wasm + 自然码码表 +
-精简词库，开箱即用。静态文件（package.json / index.js / index.d.ts /
+精简词库 + `ime-editor.js`（浏览器 IME 编辑器，Node 下可 require 不碰 DOM），
+开箱即用。静态文件（package.json / index.js / index.d.ts /
 README.md）在库中，构建产物由 `make npm` 拷入（gitignore）。
 
 ```js
-const { createEngine, ziranma } = require("@cubao/naive-pinyin");
+const { createEngine, ziranma, imeEditor } = require("@cubao/naive-pinyin");
 const engine = await createEngine({ shuangpin: ziranma.shuangpin });
-engine.query("nihkuijx").candidates[0].text;  // => 你好世界
+engine.query("nihkuijx").candidates[0].text;   // => 你好世界
+engine.segment("wodedkdp").boundaries;          // => [0,2,4,6,8] 组词光标站位
 ```
 
 发布流程（需 npm 账号且属于 @cubao org）：
 
 ```sh
-make npm                              # 组装
-cd npm && npm publish --access public # 发布（scoped 包默认私有，需显式 public）
+make npm          # 组装
+make npm-publish  # pack dry-run 后发布到官方 registry（scoped 包显式 public）
 ```
 
 ## 部署（GitHub Pages）
