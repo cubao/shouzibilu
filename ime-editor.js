@@ -358,7 +358,16 @@ function attach(textarea, opts) {
     "word-wrap:break-word;overflow-wrap:break-word;visibility:hidden;";
   document.body.appendChild(mirror);
 
-  function caretPixel() {
+  // NORMAL 模式的 block 光标（vim 风格反色块）
+  const blockCaret = document.createElement("div");
+  blockCaret.className = "ime-block-caret";
+  blockCaret.style.cssText =
+    "position:fixed;display:none;z-index:9998;pointer-events:none;background:#333;" +
+    "color:#fff;opacity:0.85;border-radius:2px;align-items:center;justify-content:center;" +
+    "overflow:hidden;";
+  document.body.appendChild(blockCaret);
+
+  function caretPixel(markerCh) {
     const ta = textarea;
     const cs = getComputedStyle(ta);
     for (const p of ["fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing",
@@ -370,15 +379,36 @@ function attach(textarea, opts) {
     const upto = ta.value.slice(0, ta.selectionStart);
     mirror.textContent = upto;
     const marker = document.createElement("span");
-    marker.textContent = "​";  // zero-width
+    marker.textContent = markerCh || "​";  // 默认 zero-width
     mirror.appendChild(marker);
     const rect = ta.getBoundingClientRect();
     const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
     return {
       x: rect.left + marker.offsetLeft - ta.scrollLeft,
       y: rect.top + marker.offsetTop - ta.scrollTop,
+      width: marker.offsetWidth,
       lineHeight: lh,
     };
+  }
+
+  function updateBlockCaret() {
+    if (mode !== "NORMAL" || document.activeElement !== textarea) {
+      blockCaret.style.display = "none";
+      return;
+    }
+    const v = val(), p = cur();
+    const ch = p < v.length && v[p] !== "\n" ? v[p] : " ";
+    const cs = getComputedStyle(textarea);
+    blockCaret.style.fontFamily = cs.fontFamily;
+    blockCaret.style.fontSize = cs.fontSize;
+    const px = caretPixel(ch);
+    blockCaret.textContent = ch;
+    blockCaret.style.left = px.x + "px";
+    blockCaret.style.top = px.y + "px";
+    blockCaret.style.width = Math.max(px.width, 4) + "px";
+    blockCaret.style.height = px.lineHeight + "px";
+    blockCaret.style.lineHeight = px.lineHeight + "px";
+    blockCaret.style.display = "flex";
   }
 
   function showPopup(html) {
@@ -441,6 +471,9 @@ function attach(textarea, opts) {
     cfg.onMode(m, english);
     if (m !== "INSERT") hidePopup();
     if (m === "INSERT") pushUndoOnce();
+    // NORMAL：隐藏细光标，画 block 光标
+    textarea.style.caretColor = m === "NORMAL" ? "transparent" : "";
+    updateBlockCaret();
   }
   // 进入 Insert 推一次 undo 快照（整个 Insert 会话 = 一个 undo 单位）
   let insertSnapshotTaken = false;
@@ -469,6 +502,7 @@ function attach(textarea, opts) {
   function buildDynamicCandidates() {
     candidates = [];
     const kw = composition;   // 含前导逗号
+    if (kw.length < 2) { dynList = []; candidates = []; return; }  // 裸 , 不进菜单
     const entries = Object.entries(cfg.mappings || {});
     const exact = [], prefix = [];
     for (const [k, v] of entries) {
@@ -523,14 +557,14 @@ function attach(textarea, opts) {
     composition = ""; caret = 0; page = 0;
     refreshSegment(); refreshCandidates(); render();
   }
-  // 动态词上屏：精确 > 首选 > 字面量「，+已输字母」
+  // 动态词上屏：精确 > 首选 > 字面量「，+已输字母」（EN 模式出半角逗号）
   function commitDynamicBest() {
     const exact = dynList.find((d) => d.key === composition);
     if (exact) { commitDynamic(exact); return; }
     if (dynList.length) { commitDynamic(dynList[0]); return; }
     const raw = composition;
     composition = ""; caret = 0;
-    insertAt(mapPunct(",") + raw.slice(1), cur());
+    insertAt((english ? "," : mapPunct(",")) + raw.slice(1), cur());
     refreshSegment(); refreshCandidates(); render();
   }
 
@@ -644,9 +678,9 @@ function attach(textarea, opts) {
       }
       return true;
     }
-    if (english) return false;   // EN 模式全透传
-
     const ch = resolveChar(e);
+    // EN 模式：除动态词（, 开头）外全透传（布局解析对 en/cn 一致）
+    if (english && !composition && ch !== ",") return false;
 
     // --- 无缓冲：少量特殊键，其余透传/字面量 ---
     if (!composition) {
@@ -746,7 +780,11 @@ function attach(textarea, opts) {
     if (/^[1-9]$/.test(ch)) {
       const idx = page * PAGE_SIZE + parseInt(ch, 10) - 1;
       if (composition[0] === ",") {
-        if (dynList[idx]) commitDynamic(dynList[idx]);
+        if (dynList[idx]) { commitDynamic(dynList[idx]); return true; }
+        if (composition.length === 1) {   // 裸 , + 数字 = 字面逗号 + 数字
+          commitDynamicBest();
+          insertAt(ch, cur());
+        }
         return true;
       }
       if (candidates[idx]) commitComposition(candidates[idx].text, candidates[idx].consumed,
@@ -761,7 +799,13 @@ function attach(textarea, opts) {
       else commitRaw();
       return true;
     }
-    if (composition[0] === ",") return true;   // 动态词模式吞掉其余键
+    if (composition[0] === ",") {
+      // 逗号模式其余可打印键：上屏最佳（裸逗号出字面逗号）再出该键
+      if (ch.length !== 1) return true;
+      commitDynamicBest();
+      insertAt(english ? ch : mapPunct(ch), cur());
+      return true;
+    }
     if (ch.length === 1 && !/[a-zA-Z0-9]/.test(ch)) {
       // 标点键：首选上屏再出标点
       if (candidates.length) commitComposition(candidates[0].text, candidates[0].consumed,
@@ -824,11 +868,12 @@ function attach(textarea, opts) {
       return;
     }
     if (op === ">") {
-      // 对范围内每一行加缩进（空行跳过）
+      // 对范围内每一行加缩进（空行跳过），光标落在首个非空白
       const lines = v.slice(s, e).split("\n");
       const out = lines.map((l, i) =>
         (i === lines.length - 1 && l === "") ? l : (l === "" ? l : cfg.indent + l));
       applyText(v.slice(0, s) + out.join("\n") + v.slice(e), s);
+      setCur(firstNonBlank(val(), s));
       return;
     }
     // d / c
@@ -854,11 +899,12 @@ function attach(textarea, opts) {
     const s = lineStart(v, p);
     let e = lineEnd(v, p);
     if (e < v.length) e++;
-    if (op === "<") {  // << 反缩进
+    if (op === "<") {  // << 反缩进，光标落在首个非空白
       const line = v.slice(s, lineEnd(v, p));
       let n = 0;
       while (n < cfg.indent.length && line[n] === cfg.indent[n]) n++;
       if (n > 0) applyText(v.slice(0, s) + line.slice(n) + v.slice(lineEnd(v, p)), s);
+      setCur(firstNonBlank(val(), s));
       return;
     }
     if (op === "c") {  // cc：清空行内容（保留行本身）进 Insert
@@ -1147,6 +1193,7 @@ function attach(textarea, opts) {
     else if (mode === "SEARCH") handled = onSearchKey(e);
     else handled = onInsertKey(e);
     if (handled) e.preventDefault();
+    if (mode === "NORMAL") updateBlockCaret();
   }
 
   function onKeyup(e) {
@@ -1166,9 +1213,13 @@ function attach(textarea, opts) {
 
   function onScrollOrResize() {
     if (popup.style.display !== "none") render();
+    updateBlockCaret();
   }
 
   textarea.addEventListener("keydown", onKeydown);
+  textarea.addEventListener("focus", updateBlockCaret);
+  textarea.addEventListener("blur", updateBlockCaret);
+  textarea.addEventListener("click", updateBlockCaret);
   document.addEventListener("keyup", onKeyup);
   window.addEventListener("scroll", onScrollOrResize, true);
   window.addEventListener("resize", onScrollOrResize);
@@ -1199,10 +1250,14 @@ function attach(textarea, opts) {
     focus: () => textarea.focus(),
     destroy() {
       textarea.removeEventListener("keydown", onKeydown);
+      textarea.removeEventListener("focus", updateBlockCaret);
+      textarea.removeEventListener("blur", updateBlockCaret);
+      textarea.removeEventListener("click", updateBlockCaret);
       document.removeEventListener("keyup", onKeyup);
       window.removeEventListener("scroll", onScrollOrResize, true);
       window.removeEventListener("resize", onScrollOrResize);
-      popup.remove(); mirror.remove(); style.remove();
+      textarea.style.caretColor = "";
+      popup.remove(); mirror.remove(); style.remove(); blockCaret.remove();
     },
   };
 }

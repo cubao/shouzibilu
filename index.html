@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>手自笔录 · naive_pinyin demo</title>
+<title>手自笔录 (shǒuzìbǐlù)</title>
 <style>
   body { font-family: -apple-system, "PingFang SC", sans-serif; max-width: 800px; margin: 40px auto; padding: 0 16px; }
   h1 { font-size: 20px; }
@@ -29,13 +29,12 @@
 </style>
 </head>
 <body>
-<h1>手自笔录 · naive_pinyin</h1>
+<h1>手自笔录 (shǒuzìbǐlù)</h1>
 <div class="bar">
-  <span id="mode">…</span>
-  方案:
-  <select id="scheme">
-    <option value="ziranma">双拼 · 自然码</option>
-    <option value="full">全拼</option>
+  键盘:
+  <select id="keyMode">
+    <option value="physical" selected>物理键 (e.code)</option>
+    <option value="letter">字母 (e.key)</option>
   </select>
   布局:
   <select id="layout">
@@ -43,12 +42,14 @@
     <option value="dvorak">Dvorak</option>
     <option value="dvorak4tzx" selected>Dvorak4TZX</option>
   </select>
-  键盘:
-  <select id="keyMode">
-    <option value="physical" selected>物理键 (e.code)</option>
-    <option value="letter">字母 (e.key)</option>
+  方案:
+  <select id="scheme">
+    <option value="ziranma">双拼 · 自然码</option>
+    <option value="full">全拼</option>
   </select>
   <label><input type="checkbox" id="vim" checked> vim</label>
+  <br />
+  <span id="mode">…</span>
   <label><input type="checkbox" id="fuzzy" checked> 模糊音</label>
   符号:
   <select id="punct">

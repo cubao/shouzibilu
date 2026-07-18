@@ -294,6 +294,54 @@ const PORT = process.env.E2E_PORT || 8971;
   check("拼音内 . 翻页", page1 !== page2 && page2.includes("2/"), page2);
   await page.keyboard.press("Escape");
 
+  // ---------- 10. 修复回归：裸逗号 / EN 模式动态词 / block 光标 / >> 光标 ----------
+  const dynCandCount = () => page.evaluate(() =>
+    document.querySelectorAll(".ime-popup .ime-cand").length);
+
+  await setDoc("", 0);   // 清场：上一节遗留了文档
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("i");
+  await page.keyboard.type(",");
+  check("裸 , 不出选择菜单", (await dynCandCount()) === 0);
+  await page.keyboard.press(" ");
+  check(", + 空格 = 字面全角逗号", (await value()) === "，", await value());
+  await page.keyboard.type(",5");
+  check(", + 数字 = 字面逗号+数字", (await value()) === "，，5", await value());
+  await page.keyboard.press("Backspace");  // 删掉多输入的字符？不，，，已在文本里
+  // 清场
+  await setDoc("", 0);
+  await page.keyboard.press("Escape"); await page.keyboard.press("i");
+
+  // EN 模式下动态词同样生效，裸逗号出半角
+  await page.keyboard.press("Shift");   // 切到 EN
+  check("Shift 切到 EN", (await badge()) === "EN");
+  await page.keyboard.type(",");
+  check("EN 裸 , 无菜单", (await dynCandCount()) === 0);
+  await page.keyboard.press(" ");
+  check("EN , + 空格 = 半角逗号", (await value()) === ",", await value());
+  await page.keyboard.type(",check");
+  check("EN ,check 出菜单", (await dynCandCount()) > 0);
+  await page.keyboard.press(" ");
+  check("EN ,check 上屏", (await value()) === ",✅", await value());
+  await page.keyboard.press("Shift");   // 切回中文
+  check("Shift 切回中", (await badge()) === "中");
+  await page.keyboard.press("Escape");
+
+  // block 光标
+  check("NORMAL 显示 block 光标", await page.isVisible(".ime-block-caret"));
+  const cc = await page.evaluate(() => document.getElementById("editor").style.caretColor);
+  check("NORMAL 隐藏原生细光标", cc === "transparent", cc);
+  await page.keyboard.press("i");
+  check("INSERT 隐藏 block 光标", !(await page.isVisible(".ime-block-caret")));
+  await page.keyboard.press("Escape");
+
+  // >> 后光标在首个非空白
+  await setDoc("ab", 0);
+  await page.keyboard.press("Shift+Period");
+  await page.keyboard.press("Shift+Period");
+  check(">> 后光标在 ^ 处", (await curPos()) === 4, String(await curPos()));
+  await setDoc("", 0);
+
   await browser.close();
   server.kill();
   console.log("----");
