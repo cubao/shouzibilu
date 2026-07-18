@@ -123,8 +123,6 @@ async function boot() {
     fetch("../wasm/ziranma.json").then(r => r.json()),
   ]);
   rebuildEngine();
-  status.textContent = `就绪。词典 ${(dictData.byteLength/1048576).toFixed(1)} MB。\n` +
-    "Shift 切换中英文 · 空格/数字选字 · 翻页键可配(默认 , .) · 标点键首选上屏 · Esc 清空 · 回车上屏字母";
   editor.focus();
 }
 
@@ -140,11 +138,21 @@ function rebuildEngine() {
   engine = Module.ccall("np_create", "number", ["string"], [JSON.stringify(config)]);
   const ptr = Module._malloc(dictData.byteLength);
   Module.HEAPU8.set(new Uint8Array(dictData), ptr);
+  const t0 = performance.now();
   Module.ccall("np_load_dict", "number", ["number","number","number"], [engine, ptr, dictData.byteLength]);
+  loadMs = (performance.now() - t0).toFixed(0);
   Module._free(ptr);
   composition = "";
   page = 0;
   render();
+  updateStatus();
+}
+
+let loadMs = "?";
+function updateStatus() {
+  const learned = JSON.parse(localStorage.getItem(LS_KEY) || "[]").length;
+  status.textContent = `词典 ${(dictData.byteLength/1048576).toFixed(1)} MB · 解析 ${loadMs} ms · 学习数据 ${learned} 条\n` +
+    "Shift 切换中英文 · 空格/数字选字 · 翻页键可配(默认 , .) · 标点键首选上屏 · Esc 清空 · 回车上屏字母";
 }
 
 function query() {
