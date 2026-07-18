@@ -22,6 +22,14 @@
  *   inst.setOption({layout: ...});      // 运行时改配置
  *   inst.destroy();
  *
+ * 程序注入接口（virtual-keyboard.js 触屏虚拟键盘走这里）：
+ *   inst.sendKey({key, code, shiftKey, ctrlKey})   // 与物理键盘同一管线；
+ *                                                    // 未 handled 的键模拟浏览器默认行为
+ *   inst.sendKeyUp({key: "Shift"})                 // keyup（Shift 单按切中英依赖它）
+ *   inst.getLayoutTable()                          // 当前布局表（code -> [unshifted, shifted]）
+ *   inst.getCaretPixel()                           // 光标像素位置（相对视口）
+ *   cfg.touchCaret: true                           // INSERT 也自绘细光标（触屏 readonly 下用）
+ *
  * 边界声明：OS 级中文输入法激活时按键会被吞，页面无法压制；
  * 请把 OS 输入源切到英文。physical 模式屏蔽的是键盘布局，不是 OS 输入法。
  */
@@ -312,6 +320,7 @@ function attach(textarea, opts) {
     pagingKeys: ",.",
     mappings: DEFAULT_MAPPINGS,
     indent: "    ",
+    touchCaret: false,          // true = INSERT 模式也自绘细光标（触屏虚拟键盘用）
     onMode: () => {},
   }, opts);
 
@@ -354,7 +363,7 @@ function attach(textarea, opts) {
     "position:fixed;display:none;z-index:9999;background:#fff;border:1px solid #ccc;" +
     "border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.15);padding:6px 10px;" +
     "font:16px/1.7 -apple-system,'PingFang SC',sans-serif;max-width:70vw;";
-  popup.addEventListener("mousedown", (e) => e.preventDefault());  // 不抢焦点
+  popup.addEventListener("pointerdown", (e) => e.preventDefault());  // 不抢焦点（触屏零延迟）
   document.body.appendChild(popup);
 
   // mirror div：计算 textarea 光标像素位置
@@ -526,7 +535,8 @@ function attach(textarea, opts) {
   }
 
   function updateBlockCaret() {
-    if (mode !== "NORMAL" || document.activeElement !== textarea) {
+    const thin = mode === "INSERT" && cfg.touchCaret;   // 触屏 readonly 下无原生光标，自绘细线
+    if ((mode !== "NORMAL" && !thin) || document.activeElement !== textarea) {
       blockCaret.style.display = "none";
       return;
     }
@@ -535,8 +545,9 @@ function attach(textarea, opts) {
     const px = caretPixel(ch);   // 只量宽度；字形由 textarea 自己画
     blockCaret.style.left = px.x + "px";
     blockCaret.style.top = px.y + "px";
-    blockCaret.style.width = Math.max(px.width, 4) + "px";
+    blockCaret.style.width = (thin ? 2 : Math.max(px.width, 4)) + "px";
     blockCaret.style.height = px.lineHeight + "px";
+    blockCaret.style.borderRadius = thin ? "0" : "2px";
     blockCaret.style.display = "block";
   }
 
@@ -604,8 +615,8 @@ function attach(textarea, opts) {
     cfg.onMode(m, english);
     if (m !== "INSERT") hidePopup();
     if (m === "INSERT") pushUndoOnce();
-    // NORMAL：隐藏细光标，画 block 光标
-    textarea.style.caretColor = m === "NORMAL" ? "transparent" : "";
+    // NORMAL / 触屏 touchCaret：隐藏原生光标，画自绘光标
+    textarea.style.caretColor = (m === "NORMAL" || cfg.touchCaret) ? "transparent" : "";
     updateBlockCaret();
   }
   // 进入 Insert 推一次 undo 快照（整个 Insert 会话 = 一个 undo 单位）
@@ -751,7 +762,7 @@ function attach(textarea, opts) {
     }
     showPopup(html);
     popup.querySelectorAll(".ime-cand").forEach((el) => {
-      el.addEventListener("mousedown", (ev) => {
+      el.addEventListener("pointerdown", (ev) => {
         ev.preventDefault();
         if (el.dataset.dyn != null) commitDynamic(dynList[+el.dataset.dyn]);
         else {
@@ -778,7 +789,7 @@ function attach(textarea, opts) {
     }
     showPopup(html);
     popup.querySelectorAll(".ime-cand[data-sc]").forEach((el) => {
-      el.addEventListener("mousedown", (ev) => {
+      el.addEventListener("pointerdown", (ev) => {
         ev.preventDefault();
         const c = searchCands[+el.dataset.sc];
         if (c) { searchBuf += c.text; searchComp = ""; renderSearch(); }
@@ -1391,16 +1402,72 @@ function attach(textarea, opts) {
         pendingFind = null; pendingR = false;
         if (hlActive) { hlActive = false; refreshHighlights(); }
       }
-      return;
+      return true;
     }
-    if (e.metaKey || e.ctrlKey || e.altKey) return;   // 组合键放行
+    if (e.metaKey || e.ctrlKey || e.altKey) return false;   // 组合键放行
 
     let handled = false;
     if (mode === "NORMAL" && cfg.vim) handled = onNormalKey(e);
     else if (mode === "SEARCH") handled = onSearchKey(e);
     else handled = onInsertKey(e);
     if (handled) e.preventDefault();
-    if (mode === "NORMAL") { updateBlockCaret(); ensureCursorVisible(); }
+    if (mode === "NORMAL" || cfg.touchCaret) { updateBlockCaret(); ensureCursorVisible(); }
+    return handled;
+  }
+
+  // ---------- 程序注入（触屏虚拟键盘） ----------
+  function keyShim(d) {   // 伪装成键盘事件的最小对象（只含管线读取的字段）
+    return {
+      key: d.key == null ? "" : d.key,
+      code: d.code || "",
+      shiftKey: !!d.shiftKey, ctrlKey: !!d.ctrlKey,
+      metaKey: !!d.metaKey, altKey: !!d.altKey,
+      preventDefault() {},
+    };
+  }
+  // 物理键盘上「未 handled → 浏览器默认行为兜底」的键，注入时没有浏览器，在这里模拟：
+  // INSERT 透传键（EN 全部可打印键 / CN 空缓冲的 Backspace·Delete·方向·Home/End 等）。
+  function emulateDefault(e) {
+    if (mode !== "INSERT") return;                    // NORMAL/SEARCH 没有可模拟的默认行为
+    if (e.ctrlKey || e.metaKey || e.altKey) return;   // 组合键放行 = 无动作
+    const key = e.key;
+    if (key === "Shift" || key === "Control" || key === "Alt" || key === "Meta") return;
+    const v = val(), s = textarea.selectionStart, t = textarea.selectionEnd;
+    // 对齐 input 监听的外部编辑处理：推入编辑后快照 + 刷新高亮/行号
+    const edit = (nv, nc) => { applyText(nv, nc, false); pushUndo(); };
+    if (key === "Backspace") {
+      preferredCol = null;
+      if (s !== t) edit(v.slice(0, s) + v.slice(t), s);
+      else if (s > 0) edit(v.slice(0, s - 1) + v.slice(t), s - 1);
+      return;
+    }
+    if (key === "Delete") {
+      preferredCol = null;
+      if (s !== t) edit(v.slice(0, s) + v.slice(t), s);
+      else if (s < v.length) edit(v.slice(0, s) + v.slice(s + 1), s);
+      return;
+    }
+    if (key === "ArrowLeft") { preferredCol = null; setCur(s === t ? s - 1 : s); return; }
+    if (key === "ArrowRight") { preferredCol = null; setCur(s === t ? t + 1 : t); return; }
+    if (key === "Home") { preferredCol = null; setCur(lineStart(v, t)); return; }
+    if (key === "End") { preferredCol = null; setCur(lineEnd(v, t)); return; }
+    if (key === "ArrowUp" || key === "ArrowDown") {
+      // 注：按逻辑行移动（textarea 原生按视觉行）；软折行下是近似
+      const li = lineIndexOf(v, t);
+      const t2 = key === "ArrowDown" ? li + 1 : li - 1;
+      if (t2 < 0) { preferredCol = null; setCur(0); return; }
+      if (t2 >= lineCount(v)) { preferredCol = null; setCur(v.length); return; }
+      const col = preferredCol ?? (t - lineStart(v, t));
+      preferredCol = col;
+      const ts = lineStartByIndex(v, t2);
+      setCur(Math.min(ts + col, lineEnd(v, ts)));
+      return;
+    }
+    preferredCol = null;
+    if (key === "Enter") { edit(v.slice(0, s) + "\n" + v.slice(t), s + 1); return; }
+    if (key === "Tab") { edit(v.slice(0, s) + cfg.indent + v.slice(t), s + cfg.indent.length); return; }
+    const ch = resolveChar(e);
+    if (ch != null && ch.length === 1) edit(v.slice(0, s) + ch + v.slice(t), s + 1);
   }
 
   function onKeyup(e) {
@@ -1470,10 +1537,23 @@ function attach(textarea, opts) {
         if (cfg.vim) setMode("NORMAL");
         else setMode("INSERT");
       }
+      textarea.style.caretColor = (mode === "NORMAL" || cfg.touchCaret) ? "transparent" : "";
+      updateBlockCaret();
       cfg.onMode(mode, english);
     },
-    getMode: () => ({ mode, english }),
+    getMode: () => ({ mode, english, composing: !!composition }),
     focus: () => textarea.focus(),
+    // 程序注入按键（触屏虚拟键盘）：与物理键盘完全同一管线；
+    // 未 handled 的透传键由 emulateDefault 模拟浏览器默认行为。
+    sendKey(d) {
+      const e = keyShim(d);
+      const handled = onKeydown(e);
+      if (!handled) { emulateDefault(e); updateBlockCaret(); ensureCursorVisible(); }
+    },
+    sendKeyUp(d) { onKeyup(keyShim(d)); },   // Shift 单按切中英依赖 keyup
+    getLayoutTable: () =>
+      (typeof cfg.layout === "string" ? LAYOUTS[cfg.layout] : cfg.layout) || LAYOUTS.qwerty,
+    getCaretPixel: (markerCh) => caretPixel(markerCh),
     destroy() {
       textarea.removeEventListener("keydown", onKeydown);
       textarea.removeEventListener("focus", updateBlockCaret);
