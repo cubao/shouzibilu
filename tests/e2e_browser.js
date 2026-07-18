@@ -515,6 +515,13 @@ const PORT = process.env.E2E_PORT || 8971;
   check("展开后文本区底部补 padding", padB > 100, String(padB));
   check("桌面开档不设 readonly", await page.evaluate(() =>
     !document.getElementById("editor").readOnly));
+  const kbAlign = await page.evaluate(() => {
+    const b = document.querySelector(".vkb-body").getBoundingClientRect();
+    const t = document.getElementById("editor").getBoundingClientRect();
+    return { dw: Math.abs(b.width - t.width), dl: Math.abs(b.left - t.left) };
+  });
+  check("键盘与 textarea 等宽且左缘对齐", kbAlign.dw < 2 && kbAlign.dl < 2,
+        JSON.stringify(kbAlign));
 
   // 主区/功能列按键按文本匹配；双标签键（数字列）用 firstChild 文本
   const vkTap = (t) => page.evaluate((t2) => {

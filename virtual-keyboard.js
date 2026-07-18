@@ -59,7 +59,7 @@ function attach(ime, textarea, opts) {
       "touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}" +
     ".vkb-handle-bar{width:44px;height:5px;border-radius:3px;background:rgba(255,255,255,.9)}" +
     ".vkb-panel{position:fixed;left:0;right:0;bottom:0;z-index:9000;display:none;" +
-      "background:#cdd2d9;padding:6px 5px calc(6px + env(safe-area-inset-bottom,0px));" +
+      "background:#cdd2d9;padding:6px 0 calc(6px + env(safe-area-inset-bottom,0px));" +
       "box-sizing:border-box;font-family:-apple-system,'PingFang SC',sans-serif;" +
       "user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;" +
       "touch-action:none;box-shadow:0 -1px 8px rgba(0,0,0,.18);transition:opacity .15s}" +
@@ -428,11 +428,18 @@ function attach(ime, textarea, opts) {
   }
   function applyVisibility() {
     handle.style.display = enabled && !open ? "flex" : "none";
-    panel.style.display = enabled && open ? "flex" : "none";
+    panel.style.display = enabled && open ? "block" : "none";   // block：body 才能撑满
+  }
+  // 键区与 textarea 等宽、左缘对齐（面板背景仍全宽）
+  function syncBodyWidth() {
+    const r = textarea.getBoundingClientRect();
+    body.style.width = r.width + "px";
+    body.style.marginLeft = r.left + "px";
   }
   const basePadBottom = parseFloat(getComputedStyle(textarea).paddingBottom) || 0;
   function applyTextarea() {
     if (destroyed) return;
+    syncBodyWidth();
     textarea.style.paddingBottom = (basePadBottom + panel.offsetHeight) + "px";
     if (cfg.coarse) {
       textarea.readOnly = true;              // 屏蔽系统键盘（iOS/Android 都吃 readonly）
@@ -485,6 +492,7 @@ function attach(ime, textarea, opts) {
   // 横竖屏/窗口变化：键盘高随 vh 变，重算文本区底部 padding
   function onResize() {
     if (enabled && open) {
+      syncBodyWidth();
       textarea.style.paddingBottom = (basePadBottom + panel.offsetHeight) + "px";
     }
   }
