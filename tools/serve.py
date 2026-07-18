@@ -20,5 +20,5 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
     with http.server.ThreadingHTTPServer(("", port), NoCacheHandler) as srv:
-        print(f"http://localhost:{port}/demo/")
+        print(f"http://localhost:{port}/")
         srv.serve_forever()

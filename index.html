@@ -57,7 +57,7 @@
 <div id="candidates"></div>
 <div id="status">加载中…</div>
 
-<script src="../wasm/naive_pinyin.js"></script>
+<script src="wasm/naive_pinyin.js"></script>
 <script>
 "use strict";
 const editor = document.getElementById("editor");
@@ -119,8 +119,8 @@ const LS_KEY = "naive_pinyin.user_freq";
 async function boot() {
   Module = await createNaivePinyin();  // UMD 全局工厂
   [dictData, ziranma] = await Promise.all([
-    fetch("../data/naive_pinyin.dict.txt").then(r => r.arrayBuffer()),
-    fetch("../wasm/ziranma.json").then(r => r.json()),
+    fetch("data/naive_pinyin.dict.txt").then(r => r.arrayBuffer()),
+    fetch("wasm/ziranma.json").then(r => r.json()),
   ]);
   rebuildEngine();
   editor.focus();

@@ -85,7 +85,7 @@ $(WASM_OUT): $(LIB_SRCS) $(NP_DIR)/src/*.h $(NP_DIR)/include/naive_pinyin/*.h Ma
 smoke: wasm
 	node wasm/smoke_test.js
 
-# 浏览器 demo（从仓库根目录起服务，demo 引用 ../wasm ../data；no-store 禁缓存）
+# 浏览器 demo（index.html 在仓库根, 与 GitHub Pages 同构; no-store 禁缓存）
 demo: $(WASM_OUT) $(DICT_OUT) $(WASM_DIR)/ziranma.json
 	python3 tools/serve.py 8000
 
@@ -108,4 +108,8 @@ $(WASM_DIR)/ziranma.json: tools/gen_ziranma.py tools/build_dict.py
 	python3 tools/gen_ziranma.py > $@
 
 clean:
-	rm -rf $(BUILD) $(WASM_OUT) $(WASM_DIR)/naive_pinyin.wasm
+	rm -rf $(BUILD)
+
+# 连 wasm 产物一起清(产物已入库供 GitHub Pages 部署, 日常 clean 不动)
+distclean: clean
+	rm -f $(WASM_OUT) $(WASM_DIR)/naive_pinyin.wasm

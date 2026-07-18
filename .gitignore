@@ -1,6 +1,4 @@
 build/
-data/
-wasm/naive_pinyin.js
-wasm/naive_pinyin.wasm
+data/jieba_dict.txt
 __pycache__/
 .DS_Store

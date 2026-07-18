@@ -24,16 +24,23 @@ AI 时代，留一个独立的中文输入环境，手写一点文字。
 ## 目录结构
 
 ```
+index.html             浏览器 demo（仓库根，GitHub Pages 直接部署）
 naive_pinyin/          C++17 库本体
   include/naive_pinyin/  对外头文件（C++ API + C API）
   src/                   实现
 third_party/nlohmann/  json.hpp（header-only，拷自 nlohmann/json）
 tools/                 Python 离线工具（词典转换等，不进 wasm 依赖链）
 tests/                 native 单元测试（自带轻量框架，无 gtest）
-wasm/                  wasm 产物与 JS glue、node 冒烟测试
-demo/                  浏览器演示页
-data/                  生成的词典（gitignore，make dict 生成）
+wasm/                  wasm 产物（已入库供 Pages 部署）与 JS glue、node 冒烟测试
+data/                  生成的词典（naive_pinyin.dict.txt 已入库；jieba 源文件 gitignore）
 ```
+
+## 部署（GitHub Pages）
+
+wasm 产物与词典已入库，`index.html` 在仓库根。仓库设置 → Pages →
+Deploy from a branch → 选 `dev` 分支 / (root) 即可，访问
+`https://district10.github.io/shouzibilu/`。
+本地预览与线上同构：`make demo` 后打开 http://localhost:8000/。
 
 ## 常用命令
 
@@ -45,7 +52,8 @@ make dict     # 生成精简词典（依赖 ../rime-ice）
 make ziranma  # 生成自然码双拼默认配置 wasm/ziranma.json
 make wasm     # 编译 WebAssembly（先 source ../emsdk/emsdk_env.sh）
 make smoke    # node 冒烟测试 wasm 产物
-make demo     # 起本地服务，打开 http://localhost:8000/demo/
+make demo     # 起本地服务，打开 http://localhost:8000/
+make regression  # 排序质量回归（21 条断言）
 make clean
 ```
 
