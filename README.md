@@ -158,6 +158,7 @@ make dict cli
 **普通模式**（精简 vim）：`h j k l` `0 ^ $` `w b e`（每汉字一词）`gg G` `%`
 `f F t T` `/ ?`+`n N`；operator `d c y >`（`dd cc yy >> <<`），text object
 `iw aw`、引号（含中文弯引号）、括号（含（）【】《》「」）；`x p P u`；
+`J` 合并下一行（补空格）/ `gJ`（不补空格）；
 `r<char>` 替换单字符（`r<Enter>` 拆行）；`i a A I o O` 进插入。
 Normal 模式显示 block 块光标（`mix-blend-mode: difference` 反色块，
 字符仍由 textarea 渲染，字号字高不变）。
@@ -165,6 +166,14 @@ Normal 模式显示 block 块光标（`mix-blend-mode: difference` 反色块，
 incsearch 实时跳转 + 全文高亮（当前命中橙色），接受后高亮保留（`n`/`N` 导航），
 Normal 下 Esc 清除高亮；搜索中 Esc 取消并还原光标。Esc 别名：`Ctrl+[`、`Ctrl+C`。
 明确不做：`.`、Visual、宏、正则、计数。
+
+**触屏虚拟键盘**：页面底部手柄上拉展开，六排仿真实键盘布局
+（数字/符号顶部两排直按、ANSI 错行、q 对齐 1），键面随布局表渲染，
+按键与物理键盘同一管线；双拼时字母键标注自然码韵母（浅绿小字）。
+Shift/Ctrl sticky 单发，中/EN 专用键，长按 ←/→ = Home/End，
+👆 长按 = 放大镜拖动光标。展开进入专注模式（页面只留编辑区，
+编辑器底边贴住键盘），触屏下 textarea 置 readonly 屏蔽系统键盘。
+桌面端也可在设置里强制开启（鼠标点字）。
 
 **界面与持久化**：编辑器撑满窗口中部（flex 布局），带绝对行号 gutter
 （折行对齐、滚动同步）；键盘驱动的光标移动自动最小滚动保持可见（scrolloff=0）。
