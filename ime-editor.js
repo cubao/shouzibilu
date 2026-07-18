@@ -491,6 +491,10 @@ function attach(textarea, opts) {
     else if (y - ta.scrollTop + lh > ta.clientHeight - padBottom) {
       ta.scrollTop = y + lh - ta.clientHeight + padBottom;
     }
+    // 键盘驱动滚动：同步高亮层与行号（不等 scroll 事件，免除时序差）
+    backdrop.scrollTop = ta.scrollTop;
+    backdrop.scrollLeft = ta.scrollLeft;
+    gutter.scrollTop = ta.scrollTop;
   }
 
   // 行号 gutter：量出每个逻辑行的折行高度，行号对齐首视觉行
