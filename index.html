@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>手自笔录 (shǒuzìbǐlù)</title>
 <style>
   @import url("https://fontsapi.zeoseven.com/442/main/result.css");
@@ -55,6 +56,12 @@
     <option value="dvorak">Dvorak</option>
     <option value="dvorak4tzx" selected>Dvorak4TZX</option>
   </select>
+  虚拟键盘:
+  <select id="vkb" title="触屏虚拟键盘（底部中间手柄上拉展开，键面随布局表渲染）&#10;自动：触屏设备显示上拉手柄&#10;开：总是显示（桌面端可用鼠标点字）&#10;关：隐藏&#10;Shift/Ctrl 为 sticky 单发；中/EN 键切换输入法；长按 ←/→ = Home/End；触屏打开时屏蔽系统键盘">
+    <option value="auto" selected>自动</option>
+    <option value="on">开</option>
+    <option value="off">关</option>
+  </select>
   方案:
   <select id="scheme" title="拼音方案&#10;双拼·自然码：每个音节恒 2 键（声母+韵母各一键），如 你好 = nihk&#10;全拼：完整拼音，如 你好 = nihao">
     <option value="ziranma">双拼 · 自然码</option>
@@ -98,6 +105,7 @@
 
 <script src="wasm/naive_pinyin.js"></script>
 <script src="ime-editor.js"></script>
+<script src="virtual-keyboard.js"></script>
 <script>
 "use strict";
 const editor = document.getElementById("editor");
@@ -110,6 +118,9 @@ const vimBox = document.getElementById("vim");
 const punctSel = document.getElementById("punct");
 const fuzzyBox = document.getElementById("fuzzy");
 const pagingSel = document.getElementById("paging");
+const vkbSel = document.getElementById("vkb");
+// 触屏环境（决定是否用 readonly 屏蔽系统键盘 + 自绘细光标）
+const coarse = matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
 const mappingsTa = document.getElementById("mappings");
 const mappingsMsg = document.getElementById("mappingsMsg");
 
@@ -163,7 +174,12 @@ x 删字，p P 粘贴，u 撤销，r 替换单字符。
 let Module, dictData, ziranma;
 let engineCtx = null;
 let ime = null;
+let vkb = null;
 let loadMs = "?";
+
+function vkbApplySetting() {
+  if (vkb) vkb.setEnabled(vkbSel.value === "on" || (vkbSel.value === "auto" && coarse));
+}
 
 // ---------- 设置持久化 ----------
 function loadSettings() {
@@ -174,7 +190,7 @@ function saveSettings() {
   localStorage.setItem(LS_SETTINGS, JSON.stringify({
     scheme: schemeSel.value, layout: layoutSel.value, keyMode: keyModeSel.value,
     vim: vimBox.checked, punct: punctSel.value, fuzzy: fuzzyBox.checked,
-    paging: pagingSel.value,
+    paging: pagingSel.value, vkb: vkbSel.value,
   }));
 }
 function loadMappings() {
@@ -230,6 +246,7 @@ async function boot() {
   if (s.punct) punctSel.value = s.punct;
   if (s.fuzzy != null) fuzzyBox.checked = s.fuzzy;
   if (s.paging) pagingSel.value = s.paging;
+  if (s.vkb) vkbSel.value = s.vkb;
 
   rebuildEngine();
   // 恢复上次内容与映射草稿（首次打开显示介绍文字）
@@ -238,9 +255,11 @@ async function boot() {
   const draft = localStorage.getItem(LS_MAPPINGS_DRAFT);
   mappingsTa.value = draft != null ? draft : JSON.stringify(loadMappings(), null, 2);
   attachEditor();
+  vkb = VirtualKeyboard.attach(ime, editor, { coarse });
+  vkbApplySetting();
   setInterval(persistAll, 10000);
   window.addEventListener("pagehide", persistAll);
-  editor.focus();
+  if (!coarse) editor.focus();   // 触屏上自动聚焦会弹系统键盘
 }
 
 function rebuildEngine() {
@@ -324,7 +343,12 @@ function attachEditor() {
 // ---------- 控件 ----------
 schemeSel.onchange = () => { rebuildEngine(); saveSettings(); editor.focus(); };
 fuzzyBox.onchange = () => { rebuildEngine(); saveSettings(); editor.focus(); };
-layoutSel.onchange = () => { ime.setOption({layout: layoutSel.value}); saveSettings(); editor.focus(); };
+layoutSel.onchange = () => {
+  ime.setOption({layout: layoutSel.value});
+  if (vkb) vkb.refresh();   // 键面随布局表重渲染
+  saveSettings(); editor.focus();
+};
+vkbSel.onchange = () => { vkbApplySetting(); saveSettings(); editor.focus(); };
 keyModeSel.onchange = () => { ime.setOption({keyMode: keyModeSel.value}); saveSettings(); editor.focus(); };
 vimBox.onchange = () => { ime.setOption({vim: vimBox.checked}); saveSettings(); editor.focus(); };
 punctSel.onchange = () => { ime.setOption({punctStyle: punctSel.value}); saveSettings(); editor.focus(); };
