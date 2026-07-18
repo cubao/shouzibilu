@@ -81,7 +81,16 @@ function attach(ime, textarea, opts) {
     ".vkb-space{flex:4.2}" +
     ".vkb-armed{background:#4a90d9;color:#fff}" +
     ".vkb-armed .vkb-sub{color:#dce9f7}" +
-    ".vkb-sub{position:absolute;top:1px;right:4px;font-size:8px;color:#777}";
+    ".vkb-sub{position:absolute;top:1px;right:4px;font-size:8px;color:#777}" +
+    ".vkb-dot{padding:0}" +
+    ".vkb-reddot{width:14px;height:14px;border-radius:50%;background:#e03e3e;" +
+      "box-shadow:0 0 0 2px rgba(224,62,62,.25)}" +
+    ".vkb-loupe{position:fixed;z-index:10002;width:180px;height:84px;border-radius:12px;" +
+      "background:#fff;border:1px solid #bbb;box-shadow:0 4px 18px rgba(0,0,0,.25);" +
+      "overflow:hidden;pointer-events:none;display:none}" +
+    ".vkb-loupe-inner{position:absolute;overflow:hidden;white-space:pre-wrap;" +
+      "word-wrap:break-word;overflow-wrap:break-word;color:#111;background:#fff}" +
+    ".vkb-loupe-caret{position:absolute;width:2px;background:#4a90d9}";
   document.head.appendChild(style);
 
   // ---------- DOM ----------
@@ -247,6 +256,12 @@ function attach(ime, textarea, opts) {
   const r4 = document.createElement("div"); r4.className = "vkb-row"; main.appendChild(r4);
   kLang = mkKey(r4, "vkb-func");
   pd(kLang, fireLang);
+  // 🔴 小红点：长按进入放大镜光标跟踪（实现见下方「小红点」一节）
+  const kDot = mkKey(r4, "vkb-func vkb-dot");
+  kDot.title = "长按：放大镜拖动光标";
+  const kDotInner = document.createElement("span");
+  kDotInner.className = "vkb-reddot";
+  kDot.appendChild(kDotInner);
   const kSpace = mkKey(r4, "vkb-space");
   pd(kSpace, () => fireCode("Space"));
   function bindArrowLP(el, arrow, homeEnd) {
@@ -276,6 +291,136 @@ function attach(ime, textarea, opts) {
   pd(kDown, () => fireNamed("ArrowDown"));
   const kRight = mkKey(r4, "vkb-func"); kRight.textContent = "→";
   bindArrowLP(kRight, "ArrowRight", "End");
+
+  // ---------- 小红点：长按放大镜跟踪光标 ----------
+  // 相对式触控板模型：手指拖动距离 1:1 映射成光标在文本里的像素移动
+  // （横向按字、纵向按行，每越过一个步长发一个虚拟方向键，全套管线语义复用）；
+  // 放大镜浮在文本光标附近并随光标走，键盘整体淡出。组词中不响应。
+  const LOUPE_ZOOM = 1.75;
+  let loupe = null, loupeInner = null, loupeCaret = null;
+  let dotTimer = null, dotActive = false, dotPid = null;
+  let dotStartX = 0, dotStartY = 0, dotLastX = 0, dotLastY = 0;
+  let dotAccX = 0, dotAccY = 0, dotStepW = 8, dotStepH = 24;
+
+  function buildLoupe() {
+    loupe = document.createElement("div");
+    loupe.className = "vkb-loupe";
+    loupeInner = document.createElement("div");
+    loupeInner.className = "vkb-loupe-inner";
+    loupeCaret = document.createElement("div");
+    loupeCaret.className = "vkb-loupe-caret";
+    loupe.appendChild(loupeInner);
+    document.body.appendChild(loupe);
+  }
+  buildLoupe();
+
+  // 内容 = textarea 的 backdrop 镜像（含搜索高亮 <mark>，默认黑字黄底可见）
+  function fillLoupeContent() {
+    const cs = getComputedStyle(textarea);
+    for (const p of ["fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing",
+                     "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+                     "tabSize", "boxSizing"]) {
+      loupeInner.style[p] = cs[p];
+    }
+    loupeInner.style.width = textarea.clientWidth + "px";
+    loupeInner.style.height = textarea.clientHeight + "px";
+    const bd = textarea.previousElementSibling;   // ime 的 backdrop（taWrap 内在 textarea 前）
+    if (bd && bd.classList && bd.classList.contains("ime-backdrop")) {
+      loupeInner.innerHTML = bd.innerHTML;
+    } else {
+      loupeInner.textContent = textarea.value;
+    }
+    loupeInner.appendChild(loupeCaret);   // innerHTML 后重挂光标标记
+  }
+
+  // inner 与屏幕文本 1:1 对齐，再以光标为 transform 原点缩放平移，让光标落到放大镜中心
+  function updateLoupe() {
+    const px = ime.getCaretPixel();         // 光标视口坐标 + width + lineHeight
+    const taRect = textarea.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const W = Math.min(180, vw - 16), H = 84;
+    loupe.style.width = W + "px";
+    loupe.style.height = H + "px";
+    // 放大镜浮在光标上方；快到屏幕上沿则翻到光标下方
+    const Lx = Math.min(Math.max(px.x - W / 2, 8), vw - W - 8);
+    let Ly = px.y - H - 24;
+    if (Ly < 8) Ly = px.y + px.lineHeight + 24;
+    loupe.style.left = Lx + "px";
+    loupe.style.top = Ly + "px";
+    const il = taRect.left - Lx, it = taRect.top - Ly;   // inner 在放大镜内的落点
+    loupeInner.style.left = il + "px";
+    loupeInner.style.top = it + "px";
+    const cl = px.x - taRect.left, ct = px.y - taRect.top;   // 光标在 inner 内的坐标
+    loupeInner.style.transformOrigin = cl + "px " + ct + "px";
+    loupeInner.style.transform =
+      "translate(" + (W / 2 - il - cl) + "px," + (H / 2 - it - ct) + "px) scale(" + LOUPE_ZOOM + ")";
+    loupeInner.scrollTop = textarea.scrollTop;   // 与文本区滚动同步
+    loupeInner.scrollLeft = textarea.scrollLeft;
+    loupeCaret.style.left = cl + "px";
+    loupeCaret.style.top = ct + "px";
+    loupeCaret.style.width = (2 / LOUPE_ZOOM) + "px";   // 缩放后视觉 ~2px
+    loupeCaret.style.height = px.lineHeight + "px";
+  }
+
+  function activateDot() {
+    if (ime.getMode().composing) return;      // 组词中不响应（组词光标用方向键）
+    dotActive = true;
+    if (navigator.vibrate) navigator.vibrate(10);
+    // 步长：激活时量一次（等宽字体下近似恒定；混排有轻微漂移，v1 接受）
+    const v = textarea.value;
+    const ch = v[textarea.selectionStart] || "0";
+    const px = ime.getCaretPixel(ch);
+    dotStepW = Math.max(px.width, 4);
+    dotStepH = px.lineHeight;
+    panel.classList.add("vkb-faded");
+    fillLoupeContent();
+    loupe.style.display = "block";
+    updateLoupe();
+  }
+
+  kDot.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    dotPid = e.pointerId;
+    dotStartX = dotLastX = e.clientX;
+    dotStartY = dotLastY = e.clientY;
+    dotAccX = dotAccY = 0;
+    dotActive = false;
+    kDot.setPointerCapture(e.pointerId);
+    dotTimer = setTimeout(activateDot, 350);
+  });
+  kDot.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== dotPid) return;
+    const dx = e.clientX - dotLastX, dy = e.clientY - dotLastY;
+    dotLastX = e.clientX; dotLastY = e.clientY;
+    if (!dotActive) {
+      if (Math.abs(e.clientX - dotStartX) + Math.abs(e.clientY - dotStartY) > 12) {
+        clearTimeout(dotTimer);   // 提前滑走：取消长按
+      }
+      return;
+    }
+    dotAccX += dx; dotAccY += dy;
+    let moved = false, guard = 0;
+    while (guard++ < 60) {
+      if (dotAccX >= dotStepW) { dotAccX -= dotStepW; ime.sendKey({ key: "ArrowRight" }); moved = true; }
+      else if (dotAccX <= -dotStepW) { dotAccX += dotStepW; ime.sendKey({ key: "ArrowLeft" }); moved = true; }
+      else if (dotAccY >= dotStepH) { dotAccY -= dotStepH; ime.sendKey({ key: "ArrowDown" }); moved = true; }
+      else if (dotAccY <= -dotStepH) { dotAccY += dotStepH; ime.sendKey({ key: "ArrowUp" }); moved = true; }
+      else break;
+    }
+    if (moved) updateLoupe();
+  });
+  function endDot(e) {
+    if (e.pointerId !== dotPid) return;
+    clearTimeout(dotTimer);
+    if (dotActive) {
+      dotActive = false;
+      panel.classList.remove("vkb-faded");
+      loupe.style.display = "none";
+    }
+    dotPid = null;
+  }
+  kDot.addEventListener("pointerup", endDot);
+  kDot.addEventListener("pointercancel", endDot);
 
   // ---------- 开合 ----------
   function persist() {
@@ -362,7 +507,9 @@ function attach(ime, textarea, opts) {
       if (enabled && open) unapplyTextarea();
       window.removeEventListener("resize", onResize);
       clearTimeout(repTimer);
+      clearTimeout(dotTimer);
       handle.remove(); panel.remove(); style.remove();
+      if (loupe) loupe.remove();
     },
   };
 }
