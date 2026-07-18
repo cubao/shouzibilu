@@ -28,6 +28,9 @@ class Dict {
   // 添加/更新一个词条（用户自定义词）。key 为空格分隔音节串。
   void AddEntry(const std::string& key, const std::string& word, int score);
 
+  // 是否已存在该 (key, word) 词条。
+  bool HasEntry(const std::string& key, const std::string& word) const;
+
   const Node* root() const { return &root_; }
   int max_key_length() const { return max_key_length_; }
   size_t num_entries() const { return num_entries_; }

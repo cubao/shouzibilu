@@ -60,6 +60,22 @@ void Dict::AddEntry(const std::string& key, const std::string& word,
   ++num_entries_;
 }
 
+bool Dict::HasEntry(const std::string& key, const std::string& word) const {
+  std::vector<std::string> syllables = SplitKey(
+      key.data(), key.data() + key.size());
+  if (syllables.empty()) return false;
+  const Node* node = &root_;
+  for (const std::string& syl : syllables) {
+    auto it = node->children.find(syl);
+    if (it == node->children.end()) return false;
+    node = it->second.get();
+  }
+  for (const auto& e : node->entries) {
+    if (e.word == word) return true;
+  }
+  return false;
+}
+
 bool Dict::Load(const char* data, size_t size) {
   if (!data || size == 0) return false;
 

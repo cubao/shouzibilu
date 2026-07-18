@@ -11,10 +11,12 @@ namespace {
 constexpr double kNegInf = -1e18;
 
 // 一条词边：raw input [start, end) 对应词典中某个 key 的候选集。
+// key 是词典侧的音节序列（模糊变体展开后的实际命中路径）。
 struct WordEdge {
   int start;
   int end;
   const std::vector<DictEntry>* entries;
+  std::string key;
 };
 
 bool IsInitial(const std::string& s) {
@@ -29,11 +31,13 @@ bool IsInitial(const std::string& s) {
 Matcher::Matcher(const Dict& dict,
                  std::vector<std::pair<std::string, std::string>> fuzzy,
                  int max_candidates, int segment_penalty,
-                 const std::unordered_map<std::string, std::string>* shuangpin_map)
+                 const std::unordered_map<std::string, std::string>* shuangpin_map,
+                 const UserFreq* user_freq)
     : dict_(dict),
       max_candidates_(max_candidates),
       segment_penalty_(segment_penalty),
-      shuangpin_map_(shuangpin_map) {
+      shuangpin_map_(shuangpin_map),
+      user_freq_(user_freq) {
   for (auto& p : fuzzy) {
     if (IsInitial(p.first) && IsInitial(p.second)) {
       initial_pairs_.push_back(std::move(p));
@@ -71,24 +75,31 @@ std::vector<std::string> Matcher::Variants(const std::string& syllable) const {
 namespace {
 
 // 从 pos 出发枚举词边：音节边 × 模糊变体，沿词典 trie 走。
+// key_path 累积词典侧音节路径（供调频叠加层查询）。
 void EnumWordEdges(const Segmentation& seg, int pos, const Dict::Node* node,
                    int depth, int max_depth, const Matcher& matcher,
-                   int start, std::vector<WordEdge>* out) {
+                   int start, std::string* key_path,
+                   std::vector<WordEdge>* out) {
   if (!node->entries.empty()) {
-    out->push_back({start, pos, &node->entries});
+    out->push_back({start, pos, &node->entries, *key_path});
   }
   if (depth >= max_depth) return;
   // apostrophe 对词边透明：用户的手动分词提示不应阻断整词匹配。
   if (seg.boundary[pos]) {
-    EnumWordEdges(seg, pos + 1, node, depth, max_depth, matcher, start, out);
+    EnumWordEdges(seg, pos + 1, node, depth, max_depth, matcher, start,
+                  key_path, out);
     return;
   }
+  const size_t base_len = key_path->size();
   for (const SyllableEdge& e : seg.edges_from[pos]) {
     for (const std::string& v : matcher.Variants(e.syllable)) {
       auto it = node->children.find(v);
       if (it != node->children.end()) {
+        if (!key_path->empty()) key_path->push_back(' ');
+        *key_path += v;
         EnumWordEdges(seg, e.end, it->second.get(), depth + 1, max_depth,
-                      matcher, start, out);
+                      matcher, start, key_path, out);
+        key_path->resize(base_len);
       }
     }
   }
@@ -110,12 +121,32 @@ std::vector<MatchCandidate> Matcher::Match(const std::string& input) const {
   std::vector<std::vector<WordEdge>> edges_cache(n + 1);
   for (int i = 0; i <= n; ++i) {
     if (!seg.boundary[i]) {
-      EnumWordEdges(seg, i, dict_.root(), 0, max_depth, *this, i,
+      std::string key_path;
+      EnumWordEdges(seg, i, dict_.root(), 0, max_depth, *this, i, &key_path,
                     &edges_cache[i]);
     }
   }
   auto word_edges_from = [&](int pos) -> const std::vector<WordEdge>& {
     return edges_cache[pos];
+  };
+
+  // 词条有效分 = 静态分 + 用户调频加分。
+  auto effective = [&](const WordEdge& e, const DictEntry& entry) {
+    int boost = user_freq_ ? user_freq_->Boost(e.key, entry.word) : 0;
+    return entry.score + boost;
+  };
+  // 词边的最优词条（有效分最高）。
+  auto best_entry = [&](const WordEdge& e) -> const DictEntry* {
+    const DictEntry* best = &e.entries->front();
+    int best_score = effective(e, *best);
+    for (const auto& entry : *e.entries) {
+      int s = effective(e, entry);
+      if (s > best_score) {
+        best = &entry;
+        best_score = s;
+      }
+    }
+    return best;
   };
 
   // ---- 前向 DP：fwd[i] = 到达 raw 下标 i 的最高分 ----
@@ -127,7 +158,7 @@ std::vector<MatchCandidate> Matcher::Match(const std::string& input) const {
       fwd[i + 1] = std::max(fwd[i + 1], fwd[i]);
     }
     for (const WordEdge& e : word_edges_from(i)) {
-      double s = fwd[i] + e.entries->front().score - segment_penalty_;
+      double s = fwd[i] + effective(e, *best_entry(e)) - segment_penalty_;
       fwd[e.end] = std::max(fwd[e.end], s);
     }
   }
@@ -141,6 +172,7 @@ std::vector<MatchCandidate> Matcher::Match(const std::string& input) const {
   std::vector<double> bwd(n + 1, kNegInf);
   std::vector<int> bwd_next(n + 1, -1);
   std::vector<std::string> bwd_word(n + 1);
+  std::vector<std::string> bwd_key(n + 1);
   bwd[m] = 0;
   for (int i = m - 1; i >= 0; --i) {
     if (seg.boundary[i] && bwd[i + 1] > kNegInf) {
@@ -149,22 +181,26 @@ std::vector<MatchCandidate> Matcher::Match(const std::string& input) const {
     }
     for (const WordEdge& e : word_edges_from(i)) {
       if (e.end > m || bwd[e.end] == kNegInf) continue;
-      double s = e.entries->front().score - segment_penalty_ + bwd[e.end];
+      const DictEntry* best = best_entry(e);
+      double s = effective(e, *best) - segment_penalty_ + bwd[e.end];
       if (s > bwd[i]) {
         bwd[i] = s;
         bwd_next[i] = e.end;
-        bwd_word[i] = e.entries->front().word;
+        bwd_word[i] = best->word;
+        bwd_key[i] = e.key;
       }
     }
   }
 
-  auto reconstruct = [&](int pos) {
-    std::string text;
+  auto reconstruct = [&](int pos, std::string* text,
+                         std::vector<std::pair<std::string, std::string>>* segs) {
     while (pos < m && bwd_next[pos] >= 0) {
-      text += bwd_word[pos];
+      if (!bwd_word[pos].empty()) {
+        *text += bwd_word[pos];
+        segs->emplace_back(bwd_key[pos], bwd_word[pos]);
+      }
       pos = bwd_next[pos];
     }
-    return text;
   };
 
   // ---- 候选生成：枚举首词 × 最优补全 ----
@@ -173,15 +209,29 @@ std::vector<MatchCandidate> Matcher::Match(const std::string& input) const {
   static constexpr size_t kTopEntriesPerPartialEdge = 3;
   for (const WordEdge& e : word_edges_from(0)) {
     if (bwd[e.end] == kNegInf) continue;
-    const std::string completion = reconstruct(e.end);
+    // 首词词条按有效分降序。
+    std::vector<const DictEntry*> sorted;
+    sorted.reserve(e.entries->size());
+    for (const auto& entry : *e.entries) sorted.push_back(&entry);
+    std::sort(sorted.begin(), sorted.end(),
+              [&](const DictEntry* a, const DictEntry* b) {
+                return effective(e, *a) > effective(e, *b);
+              });
+
     const bool full = (e.end == m);
     size_t k = full ? std::min(static_cast<size_t>(max_candidates_),
-                               e.entries->size())
-                    : std::min(kTopEntriesPerPartialEdge, e.entries->size());
+                               sorted.size())
+                    : std::min(kTopEntriesPerPartialEdge, sorted.size());
     for (size_t t = 0; t < k; ++t) {
-      const DictEntry& entry = (*e.entries)[t];
-      double total = entry.score - segment_penalty_ + bwd[e.end];
-      result.push_back({entry.word + completion, m, total});
+      const DictEntry& entry = *sorted[t];
+      double total = effective(e, entry) - segment_penalty_ + bwd[e.end];
+      MatchCandidate cand;
+      cand.consumed = m;
+      cand.score = total;
+      cand.segments.emplace_back(e.key, entry.word);
+      reconstruct(e.end, &cand.text, &cand.segments);
+      cand.text = entry.word + cand.text;
+      result.push_back(std::move(cand));
     }
   }
 

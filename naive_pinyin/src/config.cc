@@ -59,6 +59,27 @@ Config Config::FromJson(const std::string& json_str) {
     }
   }
 
+  if (j.contains("user_boost")) {
+    const auto& ub = j.at("user_boost");
+    cfg.user_boost.first = ub.value("first", cfg.user_boost.first);
+    cfg.user_boost.inc = ub.value("inc", cfg.user_boost.inc);
+    cfg.user_boost.max = ub.value("max", cfg.user_boost.max);
+    if (cfg.user_boost.first < 0 || cfg.user_boost.inc < 0 ||
+        cfg.user_boost.max < 0) {
+      throw std::runtime_error("user_boost values must be non-negative");
+    }
+  }
+
+  if (j.contains("user_freq")) {
+    for (const auto& e : j.at("user_freq")) {
+      UserFreqEntry ufe;
+      ufe.pinyin = e.at("pinyin").get<std::string>();
+      ufe.word = e.at("word").get<std::string>();
+      ufe.count = e.value("count", 0);
+      cfg.user_freq.push_back(std::move(ufe));
+    }
+  }
+
   return cfg;
 }
 

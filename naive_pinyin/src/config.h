@@ -6,6 +6,8 @@
 #include <utility>
 #include <vector>
 
+#include "user_freq.h"
+
 namespace naive_pinyin {
 
 struct UserWord {
@@ -27,6 +29,10 @@ struct Config {
   int segment_penalty = 1100;
 
   std::vector<UserWord> user_words;
+
+  // 动态调频：加分参数与持久化叠加层（np_dump_user 的导出回传）。
+  UserBoostParams user_boost;
+  std::vector<UserFreqEntry> user_freq;
 
   // 解析 JSON 配置。解析失败抛 std::runtime_error。
   static Config FromJson(const std::string& json_str);

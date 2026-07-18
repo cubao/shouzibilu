@@ -84,6 +84,36 @@ async function main() {
   const r4 = query("Ni3");
   check("非法输入返回 error", r4.error !== undefined);
 
+  // 动态调频: 提交后排序翻转
+  const before = query("jinn");  // 双拼 jin nan? 用全拼引擎
+  const ji1 = JSON.parse(Module.ccall("np_query", "string",
+                                      ["number", "string"],
+                                      [ctxFull, "jinan"]));
+  const top1 = ji1.candidates[0].text;
+  // 提交另一个候选(取 segments 回传)
+  const other = ji1.candidates.find(c => c.text !== top1);
+  if (other) {
+    Module.ccall("np_commit", null, ["number", "string"],
+                 [ctxFull, JSON.stringify(other.segments)]);
+    const ji2 = JSON.parse(Module.ccall("np_query", "string",
+                                        ["number", "string"],
+                                        [ctxFull, "jinan"]));
+    check("调频: 提交后候选翻转", ji2.candidates[0].text === other.text);
+  }
+
+  // 自造词 + 导出/重载
+  Module.ccall("np_learn_word", null, ["number", "string", "string"],
+               [ctxFull, "tang zhi xiong", "唐志雄"]);
+  const r5 = JSON.parse(Module.ccall("np_query", "string",
+                                     ["number", "string"],
+                                     [ctxFull, "tangzhixiong"]));
+  check("自造词进入候选", r5.candidates[0] &&
+        r5.candidates[0].text === "唐志雄");
+  const dump = Module.ccall("np_dump_user", "string", ["number"], [ctxFull]);
+  const dumpJson = JSON.parse(dump);
+  check("np_dump_user 导出自造词",
+        dumpJson.some(e => e.word === "唐志雄" && e.pinyin === "tang zhi xiong"));
+
   Module.ccall("np_destroy", null, ["number"], [ctx]);
   Module.ccall("np_destroy", null, ["number"], [ctxFull]);
 
