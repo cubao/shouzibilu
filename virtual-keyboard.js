@@ -7,10 +7,10 @@
  * 布局（六排，仿真实键盘轮廓 + ANSI 错行）：
  *   第0排:  ▽    ! @ # $ % ^ & * ( ) { } [ ] +   （shifted 数字符号+补充符号，直按）
  *   第A排:  `~   1 2 3 4 5 6 7 8 9 0 \ | = _ -   （数字+补充符号，直按）
- *   第1排:  Tab     q w e r t y u i o p  ⌫        （字母按布局表；右错 2%）
- *   第2排:  ESC     a s d f g h j k l ;  '        （右错 4%）
- *   第3排:  ⇧       z x c v b n m , . /  ⏎        （右错 6.5%）
- *   （第0/A 排高度 = 字母排的 60%）
+ *   第1排:  Tab     q w e r t y u i o p  ⌫        （字母按布局表；q 与数字 1 左缘对齐）
+ *   第2排:  ESC     a s d f g h j k l ;  '        （右错 2%）
+ *   第3排:  ⇧       z x c v b n m , . /  ⏎        （右错 4.5%）
+ *   （第0/A 排高度 = 字母排的 60%，功能排 = 80%）
  *   第4排:  Ctrl 中/EN 👆 [—— 空格 ——] ← ↑ ↓ →
  *   ; ' , . / 是常规字母区键位，随布局表整体翻译（dvorak 系下出字母）。
  *
@@ -46,7 +46,7 @@ const ROW3 = ["KeyZ", "KeyX", "KeyC", "KeyV", "KeyB", "KeyN", "KeyM",
 const SYM_ROW0 = "! @ # $ % ^ & * ( ) { } [ ] +".split(" ");
 const SYM_ROWA = "1 2 3 4 5 6 7 8 9 0 \\ | = _ -".split(" ");
 // 字母排错行幅度（行宽百分比，ANSI 错落比例）
-const STAGGER = ["2%", "4%", "6.5%"];
+const STAGGER = ["0%", "2%", "4.5%"];   // 首排归零：q 与数字 1 左缘对齐
 // 双拼声母键提示（zh/ch/sh = v/i/u）
 const SP_HINT = { v: "zh", i: "ch", u: "sh" };
 
@@ -77,9 +77,10 @@ function attach(ime, textarea, opts) {
       "touch-action:none;box-shadow:0 -1px 8px rgba(0,0,0,.18);transition:opacity .15s}" +
     ".vkb-faded{opacity:.12}" +
     ".vkb-body{display:flex;flex-direction:column;gap:5px;box-sizing:border-box;" +
-      "height:calc(5.2 * clamp(46px,8vh,72px) + 25px)}" +   /* 4×1 + 2×0.6 排 */
+      "height:calc(5 * clamp(46px,8vh,72px) + 25px)}" +   /* 3×1 + 2×0.6 + 1×0.8 排 */
     ".vkb-row{display:flex;gap:5px;flex:1;min-height:0}" +
     ".vkb-thin{flex:0.6}" +   /* 第0/A 排：60% 高 */
+    ".vkb-low{flex:0.8}" +   /* 功能排：80% 高 */
     ".vkb-key{flex:1;background:#fdfdfd;border-radius:6px;box-shadow:0 1px 0 rgba(0,0,0,.35);" +
       "display:flex;align-items:center;justify-content:center;position:relative;" +
       "color:#111;font-size:16px;cursor:pointer;min-width:0;overflow:hidden}" +
@@ -150,6 +151,7 @@ function attach(ime, textarea, opts) {
     return r;
   }
   function mkStagger(parent, i) {
+    if (STAGGER[i] === "0%") return;   // 零错行不放量具（否则 flex gap 白吃 5px）
     const s = document.createElement("div");
     s.className = "vkb-stagger";
     s.style.width = STAGGER[i];
@@ -298,8 +300,9 @@ function attach(ime, textarea, opts) {
       pd(kEnter, () => fireNamed("Enter", "Enter"));
     }
   }
-  // 第4排（功能行）：Ctrl + 中/EN + 👆 + 空格 + 方向键（←/→ 长按 = Home/End）
+  // 第4排（功能行，80% 高）：Ctrl + 中/EN + 👆 + 空格 + 方向键（←/→ 长按 = Home/End）
   const r4 = mkRow();
+  r4.classList.add("vkb-low");
   kCtrl = mkKey(r4, "vkb-fcell", "Ctrl");
   pd(kCtrl, () => { ctrlArm = !ctrlArm; refreshLabels(); });
   kLang = mkKey(r4, "vkb-fcell");
