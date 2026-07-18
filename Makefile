@@ -97,7 +97,7 @@ npm: $(WASM_OUT) $(DICT_OUT) $(WASM_DIR)/ziranma.json
 	cp $(WASM_OUT) $(WASM_DIR)/naive_pinyin.wasm $(NPM_DIR)/
 	cp $(DICT_OUT) $(NPM_DIR)/naive_pinyin.dict.txt
 	cp $(WASM_DIR)/ziranma.json $(NPM_DIR)/
-	cp ime-editor.js LICENSE $(NPM_DIR)/
+	cp ime-editor.js virtual-keyboard.js LICENSE $(NPM_DIR)/
 	@echo "npm 包已组装: $(NPM_DIR)/ (发布: make npm-publish)"
 
 npm-test: npm

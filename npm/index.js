@@ -110,4 +110,7 @@ module.exports = {
   // 浏览器 IME 编辑器（textarea 接管 + 候选弹窗 + 动态词 + 精简 vim）。
   // 懒加载：require 时不碰 DOM，仅在浏览器中 attach 时才需要。
   get imeEditor() { return require("./ime-editor.js"); },
+  // 触屏虚拟键盘（ime-editor 伴侣）：底部上拉展开，键面随布局表渲染，
+  // 按键经 ime.sendKey 注入。懒加载，不 attach 零成本。
+  get virtualKeyboard() { return require("./virtual-keyboard.js"); },
 };

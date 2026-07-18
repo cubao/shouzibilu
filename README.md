@@ -19,6 +19,9 @@ AI 时代，留一个独立的中文输入环境，手写一点文字。
 - **组词光标**：方向键按音节边界（DAG 全边界）移动，逐段构词即学会新词
 - **精简 vim**：Normal/Insert/Search 三模式，operator × motion / text-object（可关）
 - **键盘布局无关**：物理键（e.code）+ 布局表（qwerty / dvorak / dvorak4tzx，JSON 可覆盖）
+- **触屏虚拟键盘**：底部上拉展开，键面随布局表渲染，按键与物理键盘同一管线；
+  左栏仿真实键盘左缘（`~ Tab ESC Shift Ctrl + 数字/符号两列），sticky 修饰键、
+  中/EN 专用键、长按 ←/→ = Home/End、小红点长按放大镜拖光标；打开时屏蔽系统键盘
 - **词库**：雾凇拼音 [rime-ice](https://github.com/iDvel/rime-ice)（简体、现代词频）
   + [rime-essay](https://github.com/rime/rime-essay) 单字频率表，离线转成紧凑文本格式
 
@@ -29,7 +32,8 @@ AI 时代，留一个独立的中文输入环境，手写一点文字。
 
 ```
 index.html             浏览器 demo（仓库根，GitHub Pages 直接部署）
-ime-editor.js          IME 编辑器（键盘接管 / 候选弹窗 / 动态词 / vim）
+ime-editor.js          IME 编辑器（键盘接管 / 候选弹窗 / 动态词 / vim / 程序注入接缝）
+virtual-keyboard.js    触屏虚拟键盘（键面随布局表渲染，经 ime.sendKey 注入）
 naive_pinyin/          C++17 库本体
   include/naive_pinyin/  对外头文件（C++ API + C API）
   src/                   实现
@@ -43,8 +47,8 @@ data/                  生成的词典（naive_pinyin.dict.txt 已入库；jieba
 ## npm 包（@cubao/naive-pinyin）
 
 `npm/` 目录即 npm 包：薄 JS 封装（隐藏 ccall 样板）+ wasm + 自然码码表 +
-精简词库 + `ime-editor.js`（浏览器 IME 编辑器，Node 下可 require 不碰 DOM），
-开箱即用。静态文件（package.json / index.js / index.d.ts /
+精简词库 + `ime-editor.js`（浏览器 IME 编辑器，Node 下可 require 不碰 DOM）
++ `virtual-keyboard.js`（可选的触屏虚拟键盘伴侣），开箱即用。静态文件（package.json / index.js / index.d.ts /
 README.md）在库中，构建产物由 `make npm` 拷入（gitignore）。
 
 ```js

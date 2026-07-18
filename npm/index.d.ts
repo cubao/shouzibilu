@@ -62,15 +62,44 @@ declare module "@cubao/naive-pinyin" {
 
   // 浏览器 IME 编辑器（ime-editor.js）：textarea 全键盘接管 + 候选弹窗
   // + 动态词 + 精简 vim。仅在浏览器环境可用。
+  export interface ImeKeyDesc {
+    key: string;
+    code?: string;
+    shiftKey?: boolean;
+    ctrlKey?: boolean;
+  }
+  export interface ImeEditorInstance {
+    setOption(o: Record<string, unknown>): void;
+    getMode(): { mode: string; english: boolean; composing: boolean };
+    focus(): void;
+    // 程序注入按键（触屏虚拟键盘走这里）：与物理键盘同一管线
+    sendKey(d: ImeKeyDesc): void;
+    sendKeyUp(d: ImeKeyDesc): void;
+    getLayoutTable(): Record<string, [string, string]>;
+    getCaretPixel(markerCh?: string): { x: number; y: number; width: number; lineHeight: number };
+    destroy(): void;
+  }
   export interface ImeEditorApi {
-    attach(textarea: HTMLTextAreaElement, opts: Record<string, unknown>): {
-      setOption(o: Record<string, unknown>): void;
-      getMode(): { mode: string; english: boolean };
-      focus(): void;
-      destroy(): void;
-    };
+    attach(textarea: HTMLTextAreaElement, opts: Record<string, unknown>): ImeEditorInstance;
     LAYOUTS: Record<string, Record<string, [string, string]>>;
     DEFAULT_MAPPINGS: Record<string, string>;
   }
   export const imeEditor: ImeEditorApi;
+
+  // 触屏虚拟键盘（virtual-keyboard.js，ime-editor 伴侣）：底部上拉展开，
+  // 键面随布局表渲染；Shift/Ctrl sticky 单发；小红点长按放大镜拖光标。
+  export interface VirtualKeyboardInstance {
+    setEnabled(b: boolean): void;
+    refresh(): void;
+    isOpen(): boolean;
+    destroy(): void;
+  }
+  export interface VirtualKeyboardApi {
+    attach(
+      ime: ImeEditorInstance,
+      textarea: HTMLTextAreaElement,
+      opts?: { coarse?: boolean }
+    ): VirtualKeyboardInstance;
+  }
+  export const virtualKeyboard: VirtualKeyboardApi;
 }
