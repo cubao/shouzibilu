@@ -17,7 +17,7 @@
  * 交互约定：
  *   - ⇧ / Ctrl = sticky：单击武装一次，下一个键带修饰发出后自动解除，再点自己取消；
  *     武装只影响字母大小写与 `~ 键（数字/符号排全部直按，无视武装）
- *   - 中/EN 切换只走功能行专用键（键面实时显示当前状态）；sticky Shift 永不切语言
+ *   - 中/EN 切换只走功能行专用键（键面实时显示当前状态，物理 Shift 切换也同步）；sticky Shift 永不切语言
  *   - 双拼方案下字母键标注韵母（浅绿、右下角小字，zh/ch/sh 灰字标在 v/i/u 左上）
  *   - 长按 ← / → = Home / End；⌫ 长按自动重复；👆 长按 = 放大镜拖动光标
  *   - 触屏（coarse）下打开键盘时 textarea 置 readonly 屏蔽系统键盘，
@@ -562,6 +562,10 @@ function attach(ime, textarea, opts) {
   refreshLabels();
   applyVisibility();
 
+  // 物理 Shift 切中英 → 同步中/EN 键面（ime-editor 较旧无此接口时静默跳过）
+  const offMode = typeof ime.onModeChange === "function"
+    ? ime.onModeChange(() => refreshLang()) : null;
+
   return {
     setEnabled(b) {
       enabled = !!b;
@@ -573,6 +577,7 @@ function attach(ime, textarea, opts) {
     isOpen: () => enabled && open,
     destroy() {
       destroyed = true;
+      if (offMode) offMode();
       if (enabled && open) unapplyTextarea();
       window.removeEventListener("resize", onResize);
       clearTimeout(dotTimer);

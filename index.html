@@ -82,7 +82,7 @@
     <option value="tw">繁体符号</option>
   </select>
   翻页:
-  <select id="paging" title="候选翻页键（仅在拼音输入中生效；PgUp/PgDn 总是可用）&#10;空缓冲时 , 是动态词触发（,check → ✅）">
+  <select id="paging" title="候选翻页键（仅在拼音输入中生效；PgUp/PgDn 总是可用）&#10;空缓冲时 , 是动态词触发（需空白/换行/文首之后，,check → ✅）">
     <option value=",." selected>, .</option>
     <option value="-=">- =</option>
     <option value="[]">[ ]</option>
@@ -155,9 +155,9 @@ Backspace 逐字母删，Esc 清空，回车把字母原样上屏。
 比如 wo de dk dp：左移两下到 wode 选「我的」，左移一下到 dk 选「刀」，
 再选 dp 为「盾」——「我的刀盾」从此一打整串就出。
 
-动态词：, 先上屏逗号，紧跟小写字母转成映射。
+动态词：空格/tab/换行（或文首）后的 , 先上屏逗号，紧跟小写字母转成映射。
 ,check → ✅，,date → 今天，,time → 现在。
-逗号后面是空格或其他键就是普通逗号，写作完全无感。
+逗号前是字（如中文「，」后接拼音）就永远是普通逗号，写作完全无感。
 
 Shift 单击切换中/英文；Shift+字母 = 上屏首选再写大写。
 

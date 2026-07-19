@@ -20,6 +20,7 @@
  *     onMode: (mode, english) => {},    // mode: NORMAL | INSERT | SEARCH
  *   });
  *   inst.setOption({layout: ...});      // 运行时改配置
+ *   inst.onModeChange((mode, english) => {});   // 订阅模式/中英变化，返回退订函数
  *   inst.destroy();
  *
  * 程序注入接口（virtual-keyboard.js 触屏虚拟键盘走这里）：
@@ -351,7 +352,12 @@ function attach(textarea, opts) {
   let searchCands = [];            // 搜索框内的候选
   let searchStartPos = 0;          // 进入搜索时的光标（incsearch 基点 / Esc 还原点）
   let hlActive = false;            // 搜索接受后高亮保留中
-  let pendingComma = null;         // 刚上屏的字面逗号 {pos, len}；下一键 [a-z] 则删逗号进动态词
+  let pendingComma = null;         // 刚上屏的字面逗号 {pos, len}（仅逗号前是空白/换行/文首时武装）；下一键 [a-z] 则删逗号进动态词
+  const modeListeners = [];        // onModeChange 订阅者（virtual-keyboard 同步中/EN 键面）
+  function notifyMode() {
+    cfg.onMode(mode, english);
+    for (const f of modeListeners.slice()) f(mode, english);
+  }
   let preferredCol = null;        // j/k 列记忆
 
   const PAGE_SIZE = 9;
@@ -612,7 +618,7 @@ function attach(textarea, opts) {
   function setMode(m) {
     if (mode === "INSERT" && m !== "INSERT") leaveInsert();
     mode = m;
-    cfg.onMode(m, english);
+    notifyMode();
     if (m !== "INSERT") hidePopup();
     if (m === "INSERT") pushUndoOnce();
     // NORMAL / 触屏 touchCaret：隐藏原生光标，画自绘光标
@@ -861,10 +867,15 @@ function attach(textarea, opts) {
       if (key === "Tab") { pendingComma = null; insertAt(cfg.indent, cur()); return true; }
       if (ch == null) { pendingComma = null; return false; }
       if (ch === ",") {
-        // 逗号：立即上屏字面量（英态半角），不进模式；下一键 [a-z] 才转动态词
+        // 逗号：立即上屏字面量（英态半角），不进模式；下一键 [a-z] 才转动态词。
+        // 武装前提：逗号前是空格/tab/换行（或文首）——否则只是普通逗号，
+        // 避免中文「，」后接拼音被误吞进动态词
+        const p0 = cur();
+        const c0 = p0 > 0 ? val()[p0 - 1] : "\n";
         const lit = english ? "," : mapPunct(",");
-        insertAt(lit, cur());
-        pendingComma = { pos: cur(), len: lit.length };
+        insertAt(lit, p0);
+        pendingComma = (c0 === " " || c0 === "\t" || c0 === "\n")
+          ? { pos: cur(), len: lit.length } : null;
         return true;
       }
       if (/^[a-z]$/.test(ch)) {
@@ -1503,7 +1514,7 @@ function attach(textarea, opts) {
           searchBuf += searchComp; searchComp = "";
           renderSearch();
         }
-        cfg.onMode(mode, english);
+        notifyMode();
       }
     }
   }
@@ -1558,8 +1569,12 @@ function attach(textarea, opts) {
       }
       textarea.style.caretColor = (mode === "NORMAL" || cfg.touchCaret) ? "transparent" : "";
       updateBlockCaret();
-      cfg.onMode(mode, english);
+      notifyMode();
     },
+    // 订阅 mode/english 变化；返回退订函数
+    onModeChange(fn) { modeListeners.push(fn); return () => {
+      const i = modeListeners.indexOf(fn); if (i >= 0) modeListeners.splice(i, 1);
+    }; },
     getMode: () => ({ mode, english, composing: !!composition }),
     focus: () => textarea.focus(),
     // 程序注入按键（触屏虚拟键盘）：与物理键盘完全同一管线；

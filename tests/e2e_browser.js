@@ -149,11 +149,13 @@ const PORT = process.env.E2E_PORT || 8971;
   await page.keyboard.press("Escape");
 
   // ---------- 3. 动态词 ----------
+  await page.keyboard.press("Enter");   // 逗号前需空白/换行（或文首）才可触发动态词
   await page.keyboard.type(",check");
   const t1 = await popupText();
   check(",check 出候选 ✅", t1.includes("✅"), t1);
   await page.keyboard.press(" ");   // 精确匹配上屏
-  check("✅ 上屏", (await value()) === "我的刀盾✅", await value());
+  check("✅ 上屏", (await value()) === "我的刀盾\n✅", await value());
+  await page.keyboard.press(" ");       // 补个空格再触发
   await page.keyboard.type(",date");
   const t2 = await popupText();
   check(",date eval 出日期", /\d{4}-\d{2}-\d{2}/.test(t2), t2);
@@ -329,7 +331,7 @@ const PORT = process.env.E2E_PORT || 8971;
   check("拼音内 . 翻页", page1 !== page2 && page2.includes("2/"), page2);
   await page.keyboard.press("Escape");
 
-  // ---------- 10. 逗号新语义：字面逗号 + 紧跟字母才进动态词 ----------
+  // ---------- 10. 逗号新语义：字面逗号 + 空白/换行/文首后紧跟字母才进动态词 ----------
   const dynCandCount = () => page.evaluate(() =>
     document.querySelectorAll(".ime-popup .ime-cand").length);
 
@@ -350,6 +352,7 @@ const PORT = process.env.E2E_PORT || 8971;
   await page.keyboard.press(" ");
   check("动态词上屏（前面无逗号残留）", (await value()) === "✅", await value());
   // 动态词退格到裸逗号再退出：回到无模式
+  await page.keyboard.press("Enter");   // 逗号前需空白/换行
   await page.keyboard.type(",date");
   check(",date 菜单在", (await dynCandCount()) > 0);
   await page.keyboard.press("Escape");
@@ -366,6 +369,40 @@ const PORT = process.env.E2E_PORT || 8971;
   await page.keyboard.press(" ");
   check("EN ,check 上屏", (await value()) === "✅", await value());
   await page.keyboard.press("Shift");   // 切回中文
+
+  // 逗号触发白名单：仅文首/空格/tab/换行后的 , 才转动态词（CN 逗号+拼音不再误触发）
+  const dynOnly = () => page.evaluate(() =>
+    document.querySelectorAll(".ime-popup .ime-cand[data-dyn]").length);
+
+  await setDoc("你好", 2);
+  await page.keyboard.type(",ni");
+  check("CN 汉字后逗号+拼音不触发动态词",
+        (await dynOnly()) === 0 && (await value()) === "你好，",
+        (await value()) + "|dyn=" + (await dynOnly()));
+  await page.keyboard.press("Escape");   // 清拼音缓冲
+
+  await page.keyboard.press("Shift");   // EN
+  await setDoc("hello", 5);
+  await page.keyboard.type(",check");
+  check("EN 字母后逗号不触发（hello,check 原样）",
+        (await value()) === "hello,check" && (await dynOnly()) === 0, await value());
+  await page.keyboard.press("Shift");   // 切回中文
+
+  await setDoc("a ", 2);   // 空格后
+  await page.keyboard.type(",check");
+  check("空格后 ,check 触发", (await dynOnly()) > 0);
+  await page.keyboard.press(" ");
+  check("空格后动态词上屏", (await value()) === "a ✅", await value());
+
+  await setDoc("a\n", 2);   // 换行后
+  await page.keyboard.type(",check");
+  check("换行后 ,check 触发", (await dynOnly()) > 0);
+  await page.keyboard.press("Escape");
+
+  await setDoc("a\t", 2);   // tab 后
+  await page.keyboard.type(",check");
+  check("tab 后 ,check 触发", (await dynOnly()) > 0);
+  await page.keyboard.press("Escape");
 
   // ---------- 10.5 布局撑满 / 光标可见 / 行号 ----------
   const wrapInfo = await page.evaluate(() => {
@@ -584,6 +621,19 @@ const PORT = process.env.E2E_PORT || 8971;
     return null;
   });
   check("中/EN 键面跟着显示 EN", langLabel === "EN", String(langLabel));
+
+  // 物理 Shift 切中英 → 虚拟键盘键面同步
+  const langFace = () => page.evaluate(() => {
+    for (const k of document.querySelectorAll(".vkb-body .vkb-key"))
+      if (k.textContent === "EN" || k.textContent === "中") return k.textContent;
+    return null;
+  });
+  await page.keyboard.press("Shift");   // EN → 中（物理键）
+  check("物理 Shift 切中，键面同步显示 中",
+        (await badge()) === "中" && (await langFace()) === "中", String(await langFace()));
+  await page.keyboard.press("Shift");   // 切回 EN（后续 hello 用例依赖）
+  check("物理 Shift 切回 EN，键面同步显示 EN",
+        (await badge()) === "EN" && (await langFace()) === "EN", String(await langFace()));
 
   await setDoc("", 0);
   for (const ch of "hello") await vkTap(ch);

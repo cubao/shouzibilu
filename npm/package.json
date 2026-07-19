@@ -1,6 +1,6 @@
 {
   "name": "@cubao/naive-pinyin",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "字母串到汉字候选的精简拼音引擎 (WebAssembly)：全拼/双拼(自然码)/模糊音/整句输入/动态调频/自造词/音节边界；附浏览器 IME 编辑器",
   "main": "index.js",
   "types": "index.d.ts",
