@@ -62,6 +62,24 @@ make macos-install  # 装入 ~/Library/Input Methods 并注册 + 启用
 
 改动配置/词表后，用输入法菜单的「重新加载词库与配置…」生效。
 
+## 排障
+
+**安装后菜单/系统设置里看不到「手自笔录」**：macOS 26 对新注册输入法的
+目录有缓存。依次试：
+
+1. 完全退出系统设置（Cmd+Q）重开，在 键盘 → 输入法 → + → 「简体中文」分组里找。
+2. `killall TextInputMenuAgent; killall SystemUIServer` 后再看。
+3. 重启 Mac（最可靠的刷新方式）。
+4. 仍不行且同机的鼠须管能在添加窗口看到 → 是签名差异（ad-hoc 不被
+   GUI 收录）：Xcode → Settings → Accounts 登录 Apple ID（免费即可）→
+   Manage Certificates → + Apple Development，得到签名身份后重签：
+   `codesign --force --deep --sign "Apple Development: 名字 (TEAMID)" ~/Library/Input\ Methods/Shouzibilu.app`。
+
+**`--select-input-source` 报 err=-50**：macOS 26 禁止程序化切换输入法
+（对 Apple 自带布局同样失败），只能在系统设置 GUI 里手动添加/选中。
+
+**运行日志**：`log stream --predicate 'process == "Shouzibilu"' --info`
+
 ## 文件
 
 ```
