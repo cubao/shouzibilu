@@ -41,6 +41,7 @@ naive_pinyin/          C++17 库本体
 third_party/nlohmann/  json.hpp（header-only，拷自 nlohmann/json）
 tools/                 Python 离线工具（词典转换等，不进 wasm 依赖链）
 tests/                 native 单元测试（自带轻量框架，无 gtest）
+macos/                 macOS 输入法（InputMethodKit，复用同一核心，见 macos/README.md）
 wasm/                  wasm 产物（已入库供 Pages 部署）与 JS glue、node 冒烟测试
 data/                  生成的词典（naive_pinyin.dict.txt 已入库；jieba 源文件 gitignore）
 ```
@@ -66,6 +67,20 @@ make npm          # 组装
 make npm-publish  # pack dry-run 后发布到官方 registry（scoped 包显式 public）
 ```
 
+## macOS 输入法
+
+`macos/` 是一个基于 InputMethodKit 的原生 macOS 输入法（参考
+[鼠须管](https://github.com/rime/squirrel) 组织，复用同一 naive_pinyin
+核心，候选窗用系统自带 IMKCandidates 保持最小实现）：
+
+```sh
+make macos          # 构建 build/macos/Shouzibilu.app
+make macos-install  # 装入 ~/Library/Input Methods 并注册 + 启用
+```
+
+装好后在系统设置的输入法列表选中「手自笔录」。配置（双拼/模糊音）与用户
+词表格式同 npm 包，见 [macos/README.md](macos/README.md)。
+
 ## 部署（GitHub Pages）
 
 wasm 产物与词典已入库，`index.html` 在仓库根。仓库设置 → Pages →
@@ -88,6 +103,8 @@ make demo     # 起本地服务，打开 http://localhost:8000/
 make regression  # 排序质量回归（21 条断言）
 make npm      # 组装 npm 包到 npm/（@cubao/naive-pinyin）
 make npm-test # 组装并自测 npm 包封装
+make macos    # 构建 macOS 输入法 build/macos/Shouzibilu.app
+make macos-install  # 安装并注册 macOS 输入法
 make clean
 ```
 

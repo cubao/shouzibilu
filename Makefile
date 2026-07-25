@@ -111,9 +111,53 @@ npm-publish: npm
 	cd $(NPM_DIR) && npm pack --dry-run --registry=$(NPM_REGISTRY)
 	cd $(NPM_DIR) && npm publish --access public --registry=$(NPM_REGISTRY)
 
-# 浏览器 demo（index.html 在仓库根, 与 GitHub Pages 同构; no-store 禁缓存）
+# 浏览器 demo（index.html 在仓库根, 与 GitHub Pages 同构; no-store 禁缓存)
 demo: $(WASM_OUT) $(DICT_OUT) $(WASM_DIR)/ziranma.json
 	python3 tools/serve.py 8000
+
+# ---- macOS 输入法（参考 ../squirrel，复用同一 naive_pinyin 核心）----
+# 常用命令：
+#   make macos          构建 build/macos/Shouzibilu.app
+#   make macos-install  装入 ~/Library/Input Methods 并注册/启用（之后手动选中）
+MACOS_BUILD := $(BUILD)/macos
+APP_NAME    := Shouzibilu
+APP         := $(MACOS_BUILD)/$(APP_NAME).app
+MACOS_SRCS  := $(wildcard macos/Sources/*.mm)
+MACOS_OBJS  := $(patsubst macos/Sources/%.mm,$(MACOS_BUILD)/%.o,$(MACOS_SRCS))
+MACOS_BIN   := $(APP)/Contents/MacOS/$(APP_NAME)
+IM_INSTALL  := $(HOME)/Library/Input Methods
+
+.PHONY: macos macos-install
+
+macos: $(APP)
+	@echo "已构建 $(APP)"
+
+$(MACOS_BUILD)/%.o: macos/Sources/%.mm | $(NATIVE_DIR)
+	mkdir -p $(MACOS_BUILD)
+	$(CXX) $(CXXFLAGS) -fobjc-arc $(INCLUDES) -Imacos/Sources -MMD -MP -c $< -o $@
+
+-include $(MACOS_OBJS:.o=.d)
+
+$(MACOS_BIN): $(MACOS_OBJS) $(LIB_OBJS)
+	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
+	$(CXX) $(CXXFLAGS) -fobjc-arc $^ -o $@ \
+	  -framework Cocoa -framework InputMethodKit -framework Carbon
+	cp macos/Info.plist $(APP)/Contents/Info.plist
+	cp $(DICT_OUT) $(WASM_DIR)/ziranma.json $(APP)/Contents/Resources/
+
+$(APP): $(MACOS_BIN)
+	codesign --force --deep --sign - $(APP)
+
+# 安装到用户输入法目录并注册。装完后在系统设置或菜单栏选中"手自笔录"。
+macos-install: macos
+	mkdir -p "$(IM_INSTALL)"
+	-"$(IM_INSTALL)/$(APP_NAME).app/Contents/MacOS/$(APP_NAME)" --quit
+	rsync -a --delete "$(APP)/" "$(IM_INSTALL)/$(APP_NAME).app/"
+	"$(IM_INSTALL)/$(APP_NAME).app/Contents/MacOS/$(APP_NAME)" --install
+	"$(IM_INSTALL)/$(APP_NAME).app/Contents/MacOS/$(APP_NAME)" --enable-input-source
+	@echo "已安装到 $(IM_INSTALL)/$(APP_NAME).app"
+	@echo "下一步: 系统设置 > 键盘 > 输入法 中添加/选中「手自笔录」，或运行:"
+	@echo "  '$(IM_INSTALL)/$(APP_NAME).app/Contents/MacOS/$(APP_NAME)' --select-input-source"
 
 # ---- 词典 ----
 dict: $(DICT_OUT)
