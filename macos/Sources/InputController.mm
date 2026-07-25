@@ -7,11 +7,13 @@
 //   字母/'      追加输入
 //   空格/Tab/1  上屏高亮行第 1 列；2 3 8 9 上屏第 2-5 列（好按的键位）
 //   ↑↓ / , .    高亮行 ±1（整行蓝底，跨窗口自动滚动）
-//   ←→ / PgUp PgDn / - = [ ]   高亮行 ±4（翻页）
-//   回车        原文上屏；Esc 清除；退格删码
+//   ← / →       组词光标按音节边界左/右移（查询只取光标前缀，
+//               供逐字/逐词确认造词）；Home/End 到首/末边界
+//   PgUp PgDn / - = [ ]   高亮行 ±4（翻页）
+//   回车        原文上屏；Esc 清除；退格删码（并中止学习会话）
 //   Shift 单击  切换中/英文；Shift+字母 先原文上屏再透出
 //   标点        顶上屏高亮行首列后插对应中文标点
-//   空缓冲 ,    进入动态词模式（,check → ✅，表见用户目录 mappings.json）
+//   空缓冲 ,    上屏「，」（config.json 开 dynamic_comma 才进动态词模式）
 //   连续分次上屏拼出的 2-8 字串自动学习为新词（np_learn_word）
 //   Cmd/Ctrl/Opt 组合键一律透给应用
 //
@@ -55,6 +57,8 @@ static NSString* MapPunct(unichar ch) {
   NSArray<NSDictionary*>* _candidateData;
   NSInteger _selectedRow;          // 高亮行（全局行号，每行 kCols 个）
   NSInteger _rowStart;             // 候选窗首行（全局行号）
+  NSInteger _caret;                // 组词光标（buffer 内下标，查询只取前缀）
+  NSArray<NSNumber*>* _boundaries; // 音节边界（caret 左右移动的站位）
   BOOL _dynamicMode;               // buffer 以 , 开头：动态词模式
   BOOL _shiftAlone;                // shift 按下后未组合其它键
   // 学习会话（同 web 版 sessionAccum/finishSession）：连续分次上屏
@@ -132,9 +136,11 @@ static NSString* MapPunct(unichar ch) {
   NSString* chars = event.charactersIgnoringModifiers;
   unichar ch = chars.length ? [chars characterAtIndex:0] : 0;
 
-  // 小写字母：组码（动态词模式下同样追加）
+  // 小写字母：在光标处插入（动态词模式下同样追加）
   if (ch >= 'a' && ch <= 'z') {
-    [_buffer appendFormat:@"%c", ch];
+    [_buffer insertString:[NSString stringWithFormat:@"%c", ch]
+                  atIndex:_caret];
+    _caret++;
     [self updateComposition:client];
     return YES;
   }
@@ -144,16 +150,18 @@ static NSString* MapPunct(unichar ch) {
     return NO;
   }
   // 音节分隔符（动态词模式不用）
-  if (ch == '\'' && !_dynamicMode && _buffer.length > 0 &&
-      ![_buffer hasSuffix:@"'"]) {
-    [_buffer appendString:@"'"];
+  if (ch == '\'' && !_dynamicMode && _caret > 0 &&
+      [_buffer characterAtIndex:_caret - 1] != '\'') {
+    [_buffer insertString:@"'" atIndex:_caret];
+    _caret++;
     [self updateComposition:client];
     return YES;
   }
-  // 空缓冲：逗号进动态词模式，其它可映射标点直接上屏
+  // 空缓冲：逗号（开了 dynamic_comma 才进动态词模式），可映射标点直接上屏
   if (_buffer.length == 0) {
-    if (ch == ',' && !shift) {
+    if (ch == ',' && !shift && [[self engine] dynamicCommaEnabled]) {
       [_buffer appendString:@","];
+      _caret = 1;
       [self updateComposition:client];
       return YES;
     }
@@ -167,7 +175,11 @@ static NSString* MapPunct(unichar ch) {
 
   switch (keyCode) {
     case kVK_Delete:
-      [_buffer deleteCharactersInRange:NSMakeRange(_buffer.length - 1, 1)];
+      if (_caret > 0) {
+        [self abortSession];  // 与 web 版一致：退格中止学习会话
+        [_buffer deleteCharactersInRange:NSMakeRange(_caret - 1, 1)];
+        _caret--;
+      }
       if (_buffer.length) {
         [self updateComposition:client];
       } else {
@@ -198,16 +210,21 @@ static NSString* MapPunct(unichar ch) {
       [self moveRowBy:1];
       return YES;
     case kVK_LeftArrow:
+      [self moveCaretBy:-1 client:client];
+      return YES;
+    case kVK_RightArrow:
+      [self moveCaretBy:1 client:client];
+      return YES;
     case kVK_PageUp:
       [self moveRowBy:-kVisibleRows];
       return YES;
-    case kVK_RightArrow:
     case kVK_PageDown:
       [self moveRowBy:kVisibleRows];
       return YES;
     case kVK_Home:
     case kVK_End:
-      return YES;  // 吞掉，防止光标在组字时乱跑
+      [self moveCaretToEdge:(keyCode == kVK_End) client:client];
+      return YES;
   }
 
   // 列选择：1 = 第 1 列，2 3 8 9 = 第 2-5 列（键位好按）
@@ -280,11 +297,62 @@ static NSString* MapPunct(unichar ch) {
     _candidateData = [self dynamicCandidates];
   } else {
     _dynamicMode = NO;
-    _candidateData = [[self engine] candidatesForInput:_buffer];
+    _boundaries = [[self engine] segmentBoundariesForInput:_buffer];
+    NSString* prefix = [_buffer substringToIndex:_caret];
+    _candidateData =
+        prefix.length ? [[self engine] candidatesForInput:prefix] : @[];
   }
   _selectedRow = 0;
   _rowStart = 0;
   [self updateCandidatesDisplay:client];
+}
+
+// 光标移动后：只重查前缀（音节边界不动），重置高亮行。
+- (void)caretChanged:(id<IMKTextInput, NSObject>)client {
+  [self showMarkedText:client];
+  NSString* prefix = [_buffer substringToIndex:_caret];
+  _candidateData =
+      prefix.length ? [[self engine] candidatesForInput:prefix] : @[];
+  _selectedRow = 0;
+  _rowStart = 0;
+  [self updateCandidatesDisplay:client];
+}
+
+// 组词光标按音节边界左/右移（web 版 ArrowLeft/ArrowRight 同款）。
+- (void)moveCaretBy:(NSInteger)delta
+             client:(id<IMKTextInput, NSObject>)client {
+  if (_dynamicMode || _boundaries.count == 0) return;
+  NSInteger target = _caret;
+  if (delta < 0) {
+    for (NSInteger i = (NSInteger)_boundaries.count - 1; i >= 0; i--) {
+      NSInteger b = _boundaries[i].integerValue;
+      if (b < _caret) {
+        target = b;
+        break;
+      }
+    }
+  } else {
+    for (NSNumber* n in _boundaries) {
+      if (n.integerValue > _caret) {
+        target = n.integerValue;
+        break;
+      }
+    }
+  }
+  if (target == _caret) return;
+  _caret = target;
+  [self caretChanged:client];
+}
+
+// Home/End：光标到首/末音节边界。
+- (void)moveCaretToEdge:(BOOL)end
+                 client:(id<IMKTextInput, NSObject>)client {
+  if (_dynamicMode || _boundaries.count == 0) return;
+  NSInteger target = end ? _boundaries.lastObject.integerValue
+                         : _boundaries.firstObject.integerValue;
+  if (target == _caret) return;
+  _caret = target;
+  [self caretChanged:client];
 }
 
 // 动态词候选：精确匹配优先，其余按 key 字典序（同 web 版）。
@@ -341,8 +409,7 @@ static NSString* MapPunct(unichar ch) {
 
   if (!_panel) _panel = [[SZBCandidatePanel alloc] init];
   [_panel updateWithRows:rows highlightRow:_selectedRow - _rowStart];
-  NSRect caret = [self caretRect:client];
-  [_panel showAtScreenPoint:caret.origin];
+  [_panel showAtCaretRect:[self caretRect:client]];
 }
 
 - (NSRect)caretRect:(id<IMKTextInput, NSObject>)client {
@@ -367,7 +434,7 @@ static NSString* MapPunct(unichar ch) {
   NSAttributedString* marked =
       [[NSAttributedString alloc] initWithString:_buffer attributes:attrs];
   [client setMarkedText:marked
-        selectionRange:NSMakeRange(_buffer.length, 0)
+        selectionRange:NSMakeRange(_caret, 0)
       replacementRange:NSMakeRange(NSNotFound, 0)];
 }
 
@@ -376,6 +443,8 @@ static NSString* MapPunct(unichar ch) {
   _candidateData = @[];
   _selectedRow = 0;
   _rowStart = 0;
+  _caret = 0;
+  _boundaries = @[];
   _dynamicMode = NO;
   [_panel hide];
 }
@@ -444,6 +513,7 @@ static NSString* MapPunct(unichar ch) {
   [self sessionAccumText:text segments:cand[@"segments"]];
   [[self engine] commitSegments:cand[@"segments"]];
   [_buffer setString:rest];
+  _caret = _buffer.length;  // 上屏后光标回末尾（同 web 版）
   [client insertText:text replacementRange:NSMakeRange(NSNotFound, 0)];
 
   if (_buffer.length) {

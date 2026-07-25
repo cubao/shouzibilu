@@ -11,6 +11,7 @@
   void* _ctx;
   BOOL _dirty;
   NSDictionary<NSString*, NSString*>* _mappings;
+  NSDictionary* _cfg;  // 最近一次 reload 的合并配置
 }
 
 - (instancetype)initWithSupportDir:(NSURL*)supportDir {
@@ -85,6 +86,7 @@ withIntermediateDirectories:YES
     }
   }
 
+  _cfg = [cfg copy];
   NSData* cfgJson = [NSJSONSerialization dataWithJSONObject:cfg
                                                     options:0
                                                       error:nil];
@@ -182,6 +184,22 @@ withIntermediateDirectories:YES
 
 - (NSDictionary<NSString*, NSString*>*)mappings {
   return _mappings ? _mappings : @{};
+}
+
+- (BOOL)dynamicCommaEnabled {
+  id v = _cfg[@"dynamic_comma"];
+  return [v respondsToSelector:@selector(boolValue)] && [v boolValue];
+}
+
+- (NSArray<NSNumber*>*)segmentBoundariesForInput:(NSString*)input {
+  if (!_ctx || input.length == 0) return @[];
+  const char* raw = np_segment(_ctx, input.UTF8String);
+  if (!raw) return @[];
+  NSData* data = [NSData dataWithBytes:raw length:strlen(raw)];
+  id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+  if (![obj isKindOfClass:[NSDictionary class]] || obj[@"error"]) return @[];
+  id boundaries = obj[@"boundaries"];
+  return [boundaries isKindOfClass:[NSArray class]] ? boundaries : @[];
 }
 
 - (void)learnWord:(NSString*)word key:(NSString*)key {

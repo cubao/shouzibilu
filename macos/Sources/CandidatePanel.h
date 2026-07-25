@@ -18,8 +18,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)updateWithRows:(NSArray<NSArray<NSString*>*>*)rows
           highlightRow:(NSInteger)highlightRow;
 
-// 显示在屏幕点（光标左下角，Cocoa 屏幕坐标）下方，自动夹到屏幕内。
-- (void)showAtScreenPoint:(NSPoint)point;
+// 显示在光标行矩形（Cocoa 屏幕坐标）下方；下方空间不足时翻转到
+// 行上方（不遮挡光标与文本）。自动夹到屏幕内。
+- (void)showAtCaretRect:(NSRect)rect;
 
 - (void)hide;
 

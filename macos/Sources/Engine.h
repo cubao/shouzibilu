@@ -37,6 +37,14 @@ NS_ASSUME_NONNULL_BEGIN
 // 动态词映射表（"," 开头触发，同 web 版语义）。
 - (NSDictionary<NSString*, NSString*>*)mappings;
 
+// 动态词触发开关（config.json 里 "dynamic_comma": true 才开，默认关：
+// 空缓冲逗号直接上屏「，」）。
+- (BOOL)dynamicCommaEnabled;
+
+// 音节边界（np_segment，供组词光标按音节左右移动）。
+// 返回升序下标数组（含 0 与 input.length），无结果返回空数组。
+- (NSArray<NSNumber*>*)segmentBoundariesForInput:(NSString*)input;
+
 // 将用户调频叠加层写回 user_freq.json（仅在有变更时真正写盘）。
 - (void)saveUserIfNeeded;
 

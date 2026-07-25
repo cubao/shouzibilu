@@ -141,20 +141,27 @@ static NSString* const kKeyHints[kCols] = {@"␣", @"2", @"3", @"8", @"9"};
   [_view setNeedsDisplay:YES];
 }
 
-- (void)showAtScreenPoint:(NSPoint)point {
+- (void)showAtCaretRect:(NSRect)rect {
   NSSize size = self.frame.size;
-  NSPoint origin = NSMakePoint(point.x, point.y - size.height - 4);
   // 夹到光标所在屏幕的可见区域
   NSScreen* screen = [NSScreen mainScreen];
   for (NSScreen* s in [NSScreen screens]) {
-    if (NSPointInRect(point, s.frame)) {
+    if (NSPointInRect(rect.origin, s.frame)) {
       screen = s;
       break;
     }
   }
   NSRect vf = screen.visibleFrame;
-  origin.x = MIN(MAX(origin.x, vf.origin.x + 4),
+  NSPoint origin;
+  origin.x = MIN(MAX(rect.origin.x, vf.origin.x + 4),
                  vf.origin.x + vf.size.width - size.width - 4);
+  CGFloat belowY = rect.origin.y - size.height - 2;
+  if (belowY >= vf.origin.y + 4) {
+    origin.y = belowY;  // 下方空间够：贴光标行下方
+  } else {
+    // 不够：翻转到行上方（面板底边贴行顶，不遮挡光标与文本）
+    origin.y = rect.origin.y + rect.size.height + 2;
+  }
   origin.y = MIN(MAX(origin.y, vf.origin.y + 4),
                  vf.origin.y + vf.size.height - size.height - 4);
   [self setFrameOrigin:origin];
