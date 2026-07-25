@@ -5,7 +5,7 @@
 //
 // 交互（与 web 版 ime-editor.js 语义对齐）：
 //   字母/'      追加输入
-//   空格/Tab/1  上屏高亮行第 1 列；2 3 8 9 上屏第 2-5 列（好按的键位）
+//   空格/Tab/1  上屏高亮行第 1 列；2 3 4 5 上屏第 2-5 列
 //   ↑↓ / , .    高亮行 ±1（整行蓝底，跨窗口自动滚动）
 //   ← / →       组词光标按音节边界左/右移（查询只取光标前缀，
 //               供逐字/逐词确认造词）；Home/End 到首/末边界
@@ -26,7 +26,7 @@
 
 // 虚拟键码 kVK_* 来自 HIToolbox/Events.h（已由 InputMethodKit 头引入）。
 
-static const NSInteger kCols = 5;         // 每行候选数（列选择键 ␣ 2 3 8 9）
+static const NSInteger kCols = 5;         // 每行候选数（列选择键 ␣/1 2 3 4 5）
 static const NSInteger kVisibleRows = 4;  // 候选窗可见行数（每页 5×4=20）
 
 // 中文标点映射（web 版 PUNCT 表的 macOS 简化版）。
@@ -227,18 +227,16 @@ static NSString* MapPunct(unichar ch) {
       return YES;
   }
 
-  // 列选择：1 = 第 1 列，2 3 8 9 = 第 2-5 列（键位好按）
-  if (!shift && (ch == '1' || ch == '2' || ch == '3' || ch == '8' || ch == '9')) {
+  // 列选择：1-5 = 第 1-5 列（空格 = 第 1 列）
+  if (!shift && ch >= '1' && ch <= '5') {
     if (_candidateData.count == 0) {
       [self commitLiteral:client];
       return NO;  // 无候选：原文上屏，数字透给应用
     }
-    [self commitColumn:(ch == '1') ? 0 : (ch == '2') ? 1 : (ch == '3') ? 2
-                                       : (ch == '8') ? 3 : 4
-                client:client];
+    [self commitColumn:(ch - '1') client:client];
     return YES;
   }
-  // 其余数字键（4 5 6 7 0）：组字时吞掉
+  // 其余数字键（6 7 8 9 0）：组字时吞掉
   if (!shift && ch >= '0' && ch <= '9') return YES;
   // , . 高亮行 ∓1（有候选时）；无候选按标点处理
   if ((ch == ',' || ch == '.') && !shift && _candidateData.count > 0) {
@@ -604,6 +602,14 @@ static NSString* MapPunct(unichar ch) {
                           keyEquivalent:@""];
   openDir.target = self;
   [menu addItem:openDir];
+  [menu addItem:[NSMenuItem separatorItem]];
+
+  NSMenuItem* exportFreq =
+      [[NSMenuItem alloc] initWithTitle:@"导出用户词频统计…"
+                                 action:@selector(exportUserFreqAction:)
+                          keyEquivalent:@""];
+  exportFreq.target = self;
+  [menu addItem:exportFreq];
   return menu;
 }
 
@@ -622,6 +628,17 @@ static NSString* MapPunct(unichar ch) {
   [[NSWorkspace sharedWorkspace]
        selectFile:nil
       inFileViewerRootedAtPath:[[self engine].supportDir path]];
+}
+
+- (void)exportUserFreqAction:(id)sender {
+  NSURL* file = [[self engine] exportUserFreq];
+  if (file) {
+    [[NSWorkspace sharedWorkspace] selectFile:file.path
+                     inFileViewerRootedAtPath:file.URLByDeletingLastPathComponent
+                                                  .path];
+  } else {
+    NSLog(@"Shouzibilu: export user freq failed");
+  }
 }
 
 @end

@@ -28,10 +28,10 @@
 	<dict>
 		<key>tsInputModeListKey</key>
 		<dict>
-			<key>im.cubao.inputmethod.Shouzibilu.Hans</key>
+			<key>shouzibilu</key>
 			<dict>
 				<key>TISInputSourceID</key>
-				<string>im.cubao.inputmethod.Shouzibilu.Hans</string>
+				<string>shouzibilu</string>
 				<key>TISIntendedLanguage</key>
 				<string>zh-Hans</string>
 				<key>tsInputModeCharacterRepertoireKey</key>
@@ -51,7 +51,7 @@
 		</dict>
 		<key>tsVisibleInputModeOrderedArrayKey</key>
 		<array>
-			<string>im.cubao.inputmethod.Shouzibilu.Hans</string>
+			<string>shouzibilu</string>
 		</array>
 	</dict>
 	<key>InputMethodConnectionName</key>

@@ -119,6 +119,7 @@ demo: $(WASM_OUT) $(DICT_OUT) $(WASM_DIR)/ziranma.json
 # 常用命令：
 #   make macos          构建 build/macos/Shouzibilu.app
 #   make macos-install  装入 ~/Library/Input Methods 并注册/启用（之后手动选中）
+#   make macos-dist     打包 build/macos/Shouzibilu-macos.tar.gz（分发到其它机器）
 MACOS_BUILD := $(BUILD)/macos
 APP_NAME    := Shouzibilu
 APP         := $(MACOS_BUILD)/$(APP_NAME).app
@@ -127,7 +128,7 @@ MACOS_OBJS  := $(patsubst macos/Sources/%.mm,$(MACOS_BUILD)/%.o,$(MACOS_SRCS))
 MACOS_BIN   := $(APP)/Contents/MacOS/$(APP_NAME)
 IM_INSTALL  := $(HOME)/Library/Input Methods
 
-.PHONY: macos macos-install
+.PHONY: macos macos-install macos-dist
 
 macos: $(APP)
 	@echo "已构建 $(APP)"
@@ -149,6 +150,10 @@ $(APP): $(MACOS_BIN)
 	codesign --force --deep --sign - $(APP)
 
 # 安装到用户输入法目录并注册。装完后在系统设置或菜单栏选中"手自笔录"。
+macos-dist: macos
+	tar -czf $(MACOS_BUILD)/$(APP_NAME)-macos.tar.gz -C $(MACOS_BUILD) $(APP_NAME).app
+	@echo "已打包 $(MACOS_BUILD)/$(APP_NAME)-macos.tar.gz"
+
 macos-install: macos
 	mkdir -p "$(IM_INSTALL)"
 	-"$(IM_INSTALL)/$(APP_NAME).app/Contents/MacOS/$(APP_NAME)" --quit

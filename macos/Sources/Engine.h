@@ -34,6 +34,11 @@ NS_ASSUME_NONNULL_BEGIN
 // 学习自造词：key 为空格分隔音节（如 "tang zhi xiong"）。
 - (void)learnWord:(NSString*)word key:(NSString*)key;
 
+// 导出用户词频统计：np_dump_user 全量（每次上屏的 segment 都计数，
+// 含自造词），写成 TSV（count 降序，表头 count/word/pinyin）到
+// 支持目录 exports/ 下，返回文件 URL 供 Finder 定位。失败返回 nil。
+- (NSURL*)exportUserFreq;
+
 // 动态词映射表（"," 开头触发，同 web 版语义）。
 - (NSDictionary<NSString*, NSString*>*)mappings;
 

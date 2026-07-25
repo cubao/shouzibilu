@@ -12,8 +12,8 @@ static const CGFloat kKeyHintWidth = 20;  // 列选择键提示宽度
 static const CGFloat kFontSize = 18;
 static const CGFloat kCornerRadius = 8;
 
-// 列选择键提示：第 1 列空格，其后 2 3 8 9（与控制器按键处理一致）。
-static NSString* const kKeyHints[kCols] = {@"␣", @"2", @"3", @"8", @"9"};
+// 列选择键提示：第 1 列空格（1 也行），其后 2 3 4 5（与控制器一致）。
+static NSString* const kKeyHints[kCols] = {@"␣", @"2", @"3", @"4", @"5"};
 
 @interface SZBCandidateView : NSView
 @property(nonatomic) NSArray<NSArray<NSString*>*>* rows;

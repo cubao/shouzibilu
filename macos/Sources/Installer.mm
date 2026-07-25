@@ -6,7 +6,7 @@
 #import <Carbon/Carbon.h>
 #import <Cocoa/Cocoa.h>
 
-static NSString* const kInputModeID = @"im.cubao.inputmethod.Shouzibilu.Hans";
+static NSString* const kInputModeID = @"shouzibilu";
 
 @implementation SZBInstaller
 

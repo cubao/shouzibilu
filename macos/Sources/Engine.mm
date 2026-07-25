@@ -208,6 +208,42 @@ withIntermediateDirectories:YES
   _dirty = YES;
 }
 
+- (NSURL*)exportUserFreq {
+  if (!_ctx) return nil;
+  const char* raw = np_dump_user(_ctx);
+  if (!raw) return nil;
+  NSData* data = [NSData dataWithBytes:raw length:strlen(raw)];
+  id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+  if (![obj isKindOfClass:[NSArray class]]) return nil;
+  NSArray* entries = obj;
+  entries = [entries
+      sortedArrayUsingComparator:^NSComparisonResult(NSDictionary* a,
+                                                     NSDictionary* b) {
+        return [b[@"count"] compare:a[@"count"]];  // count 降序
+      }];
+  NSMutableString* tsv = [NSMutableString stringWithString:@"count\tword\tpinyin\n"];
+  for (NSDictionary* e in entries) {
+    [tsv appendFormat:@"%@\t%@\t%@\n", e[@"count"], e[@"word"], e[@"pinyin"]];
+  }
+  NSURL* dir = [[self supportDir] URLByAppendingPathComponent:@"exports"
+                                                  isDirectory:YES];
+  [[NSFileManager defaultManager] createDirectoryAtURL:dir
+                           withIntermediateDirectories:YES
+                                            attributes:nil
+                                                 error:nil];
+  NSDateFormatter* fmt = [[NSDateFormatter alloc] init];
+  fmt.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+  fmt.dateFormat = @"yyyyMMdd-HHmmss";
+  NSURL* file = [dir
+      URLByAppendingPathComponent:[NSString stringWithFormat:
+                                                @"user_freq_%@.tsv",
+                                                [fmt stringFromDate:[NSDate date]]]];
+  if (![tsv writeToURL:file atomically:YES encoding:NSUTF8StringEncoding error:nil]) {
+    return nil;
+  }
+  return file;
+}
+
 - (NSArray<NSDictionary*>*)candidatesForInput:(NSString*)input {
   if (!_ctx || input.length == 0) return @[];
   const char* raw = np_query(_ctx, input.UTF8String);

@@ -31,13 +31,40 @@ make macos-install  # 装入 ~/Library/Input Methods 并注册 + 启用
 .../Shouzibilu --query nihk      # 双拼（自然码）：你好
 ```
 
+## 安装到其它机器
+
+```sh
+make macos-dist   # 产出 build/macos/Shouzibilu-macos.tar.gz
+```
+
+把 tar.gz 拷到目标机（AirDrop / U 盘 / scp 均可），然后在**目标机**上：
+
+```sh
+mkdir -p ~/Library/Input\ Methods
+tar -xzf Shouzibilu-macos.tar.gz -C ~/Library/Input\ Methods/
+# 若是经浏览器/聊天软件下载的（带隔离属性），先去掉：
+xattr -dr com.apple.quarantine ~/Library/Input\ Methods/Shouzibilu.app
+# 注册 + 启用
+~/Library/Input\ Methods/Shouzibilu.app/Contents/MacOS/Shouzibilu --install
+~/Library/Input\ Methods/Shouzibilu.app/Contents/MacOS/Shouzibilu --enable-input-source
+```
+
+然后在 系统设置 → 键盘 → 输入法 里添加/选中「手自笔录」（看不到就看
+文末排障）。ad-hoc 签名在本机构建本机跑没问题；目标机若双击报
+“无法验证开发者”，不要用双击启动——输入法是系统拉起的，不影响；
+仍有疑虑可在 系统设置 → 隐私与安全性 里放行。
+
+用户数据迁移（可选）：把本机 `~/Library/Application Support/Shouzibilu/`
+整个拷到目标机同路径（`config.json` 双拼、`mappings.json` 动态词、
+`user_freq.json` 调频与自造词、`*.dict.txt` 用户词表都在里面）。
+
 ## 按键
 
 | 按键 | 行为 |
 |---|---|
 | 字母 / `'` | 组码（`'` 为音节分隔符） |
 | 空格 / Tab / `1` | 上屏高亮行第 1 列 |
-| `2` `3` `8` `9` | 上屏高亮行第 2-5 列（挑的好按的键位） |
+| `2` `3` `4` `5` | 上屏高亮行第 2-5 列 |
 | ↑ / ↓ / `,` / `.` | 高亮行逐行移动（整行蓝底，窗口自动滚动） |
 | ← / → | 组词光标按音节边界移动（查询只取光标前缀，供逐字/词确认） |
 | Home / End | 组词光标到首 / 末音节边界 |
@@ -50,7 +77,7 @@ make macos-install  # 装入 ~/Library/Input Methods 并注册 + 启用
 | Cmd/Ctrl/Opt 组合键 | 一律透给应用 |
 
 候选窗：5 列 × 4 行自绘网格，跟随光标（行矩形定位）；光标行距屏幕
-底边不足一个面板高时自动翻转到行上方，不遮挡文本。4 5 6 7 0 在
+底边不足一个面板高时自动翻转到行上方，不遮挡文本。6 7 8 9 0 在
 组字时不作选词键（吞掉）。
 
 ## 学习新词（与 web 版同语义）
@@ -101,6 +128,14 @@ make macos-install  # 装入 ~/Library/Input Methods 并注册 + 启用
 - `user_freq.json` — 动态调频 + 自造词叠加层，自动维护。
 
 改动后用输入法菜单的「重新加载词库与配置」生效。
+
+## 导出用户词频统计
+
+输入法菜单「导出用户词频统计…」：把 `np_dump_user` 全量（每次上屏的
+segment 都计数，含自造词）写成 TSV（count 降序，表头
+`count word pinyin`）到配置目录 `exports/user_freq_<时间戳>.tsv`，
+并在 Finder 中定位。原始数据就是同目录的 `user_freq.json`（JSON）。
+
 
 ## 排障
 
