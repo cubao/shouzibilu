@@ -139,12 +139,13 @@ $(MACOS_BUILD)/%.o: macos/Sources/%.mm | $(NATIVE_DIR)
 
 -include $(MACOS_OBJS:.o=.d)
 
-$(MACOS_BIN): $(MACOS_OBJS) $(LIB_OBJS)
+$(MACOS_BIN): $(MACOS_OBJS) $(LIB_OBJS) macos/Info.plist macos/mappings.json macos/icon.icns macos/menuicon.pdf $(DICT_OUT) $(WASM_DIR)/ziranma.json
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
-	$(CXX) $(CXXFLAGS) -fobjc-arc $^ -o $@ \
+	$(CXX) $(CXXFLAGS) -fobjc-arc $(MACOS_OBJS) $(LIB_OBJS) -o $@ \
 	  -framework Cocoa -framework InputMethodKit -framework Carbon
 	cp macos/Info.plist $(APP)/Contents/Info.plist
-	cp $(DICT_OUT) $(WASM_DIR)/ziranma.json macos/mappings.json $(APP)/Contents/Resources/
+	cp $(DICT_OUT) $(WASM_DIR)/ziranma.json macos/mappings.json \
+	   macos/icon.icns macos/menuicon.pdf $(APP)/Contents/Resources/
 
 $(APP): $(MACOS_BIN)
 	codesign --force --deep --sign - $(APP)
