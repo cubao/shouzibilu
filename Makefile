@@ -143,7 +143,7 @@ $(MACOS_BIN): $(MACOS_OBJS) $(LIB_OBJS)
 	$(CXX) $(CXXFLAGS) -fobjc-arc $^ -o $@ \
 	  -framework Cocoa -framework InputMethodKit -framework Carbon
 	cp macos/Info.plist $(APP)/Contents/Info.plist
-	cp $(DICT_OUT) $(WASM_DIR)/ziranma.json $(APP)/Contents/Resources/
+	cp $(DICT_OUT) $(WASM_DIR)/ziranma.json macos/mappings.json $(APP)/Contents/Resources/
 
 $(APP): $(MACOS_BIN)
 	codesign --force --deep --sign - $(APP)

@@ -1,0 +1,12 @@
+{
+  ",check": "✅",
+  ",cross": "❌",
+  ",star": "⭐",
+  ",warn": "⚠️",
+  ",ok": "🆗",
+  ",shrug": "¯\\_(ツ)_/¯",
+  ",date": "eval:date",
+  ",time": "eval:time",
+  ",datetime": "eval:datetime",
+  ",uuid": "eval:uuid"
+}

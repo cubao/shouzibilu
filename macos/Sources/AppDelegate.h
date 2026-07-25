@@ -17,10 +17,6 @@ NS_ASSUME_NONNULL_BEGIN
 // 用户目录：~/Library/Application Support/Shouzibilu
 + (NSURL*)supportDir;
 
-- (void)toggleASCIIMode:(id)sender;
-- (void)reloadEngine:(id)sender;
-- (void)openSupportDir:(id)sender;
-
 @end
 
 NS_ASSUME_NONNULL_END

@@ -36,16 +36,4 @@
   [_engine saveUserIfNeeded];
 }
 
-- (void)toggleASCIIMode:(id)sender {
-  self.asciiMode = !self.asciiMode;
-}
-
-- (void)reloadEngine:(id)sender {
-  [_engine reload];
-}
-
-- (void)openSupportDir:(id)sender {
-  [[NSWorkspace sharedWorkspace] openURL:_engine.supportDir];
-}
-
 @end

@@ -14,6 +14,10 @@ NS_ASSUME_NONNULL_BEGIN
 //                     {"shuangpin":{"map":{...}}, "fuzzy":[["z","zh"]], ...}）
 //   *.dict.txt        可选，追加词表（与 data/naive_pinyin.dict.txt 同格式）
 //   user_freq.json    自动维护的动态调频叠加层（np_dump_user 导出）
+//   mappings.json     可选，动态词映射表（同 web 版 cfg.mappings：
+//                     {",check": "✅", ...}；eval:date/time/datetime/uuid
+//                     内置求值，其它 eval: 项忽略）。不存在时从 app 内
+//                     置默认表拷贝一份，方便用户手动改。
 @property(nonatomic, readonly) NSURL* supportDir;
 
 - (instancetype)initWithSupportDir:(NSURL*)supportDir;
@@ -26,6 +30,12 @@ NS_ASSUME_NONNULL_BEGIN
 
 // 动态调频：segments 为候选 JSON 的 segments 字段。
 - (void)commitSegments:(NSArray<NSDictionary*>*)segments;
+
+// 学习自造词：key 为空格分隔音节（如 "tang zhi xiong"）。
+- (void)learnWord:(NSString*)word key:(NSString*)key;
+
+// 动态词映射表（"," 开头触发，同 web 版语义）。
+- (NSDictionary<NSString*, NSString*>*)mappings;
 
 // 将用户调频叠加层写回 user_freq.json（仅在有变更时真正写盘）。
 - (void)saveUserIfNeeded;

@@ -10,6 +10,7 @@
 @implementation SZBLEngine {
   void* _ctx;
   BOOL _dirty;
+  NSDictionary<NSString*, NSString*>* _mappings;
 }
 
 - (instancetype)initWithSupportDir:(NSURL*)supportDir {
@@ -38,6 +39,10 @@ withIntermediateDirectories:YES
   return [_supportDir URLByAppendingPathComponent:@"user_freq.json"];
 }
 
+- (NSURL*)mappingsURL {
+  return [_supportDir URLByAppendingPathComponent:@"mappings.json"];
+}
+
 - (BOOL)loadDictData:(NSData*)data {
   if (!_ctx || !data.length) return NO;
   return np_load_dict(_ctx, (const char*)data.bytes, (int)data.length) != 0;
@@ -63,7 +68,7 @@ withIntermediateDirectories:YES
     }
   }
   if (!cfg[@"max_candidates"]) {
-    cfg[@"max_candidates"] = @50;  // 桌面端多给一些候选，配合候选窗滚动
+    cfg[@"max_candidates"] = @200;  // 桌面端多给候选，配合自绘候选窗翻页
   }
   NSData* freqData = [NSData dataWithContentsOfURL:[self userFreqURL]];
   if (freqData) {
@@ -113,7 +118,76 @@ withIntermediateDirectories:YES
       }
     }
   }
+  [self loadMappings];
   _dirty = NO;
+}
+
+// mappings.json：用户目录没有就从 bundle 内置默认表拷一份（可手动改）。
+- (void)loadMappings {
+  NSURL* url = [self mappingsURL];
+  if (![[NSFileManager defaultManager] fileExistsAtPath:url.path]) {
+    NSURL* builtin =
+        [[NSBundle mainBundle] URLForResource:@"mappings" withExtension:@"json"];
+    if (builtin) {
+      [[NSFileManager defaultManager] copyItemAtURL:builtin
+                                              toURL:url
+                                              error:nil];
+    }
+  }
+  NSMutableDictionary* result = [NSMutableDictionary dictionary];
+  NSData* data = [NSData dataWithContentsOfURL:url];
+  if (data) {
+    id obj = [NSJSONSerialization JSONObjectWithData:data
+                                             options:0
+                                               error:nil];
+    if ([obj isKindOfClass:[NSDictionary class]]) {
+      for (NSString* key in obj) {
+        id value = obj[key];
+        if (![value isKindOfClass:[NSString class]]) continue;
+        NSString* text = [self evalMapping:value forKey:key];
+        if (text) result[key] = text;
+      }
+    } else {
+      NSLog(@"Shouzibilu: ignoring invalid mappings.json");
+    }
+  }
+  _mappings = [result copy];
+}
+
+// "eval:xxx" 内置求值（web 版是 JS eval，这里只支持固定的四项）；
+// 静态字符串原样返回。不认识的 eval 返回 nil（忽略该项）。
+- (NSString*)evalMapping:(NSString*)value forKey:(NSString*)key {
+  if (![value hasPrefix:@"eval:"]) return value;
+  NSString* what = [value substringFromIndex:5];
+  NSDateFormatter* fmt = [[NSDateFormatter alloc] init];
+  fmt.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+  if ([what isEqualToString:@"date"]) {
+    fmt.dateFormat = @"yyyy-MM-dd";
+    return [fmt stringFromDate:[NSDate date]];
+  }
+  if ([what isEqualToString:@"time"]) {
+    fmt.dateFormat = @"HH:mm:ss";
+    return [fmt stringFromDate:[NSDate date]];
+  }
+  if ([what isEqualToString:@"datetime"]) {
+    fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
+    return [fmt stringFromDate:[NSDate date]];
+  }
+  if ([what isEqualToString:@"uuid"]) {
+    return [[NSUUID UUID] UUIDString].lowercaseString;
+  }
+  NSLog(@"Shouzibilu: unsupported mapping %@ -> %@, skipped", key, value);
+  return nil;
+}
+
+- (NSDictionary<NSString*, NSString*>*)mappings {
+  return _mappings ? _mappings : @{};
+}
+
+- (void)learnWord:(NSString*)word key:(NSString*)key {
+  if (!_ctx || word.length == 0 || key.length == 0) return;
+  np_learn_word(_ctx, key.UTF8String, word.UTF8String);
+  _dirty = YES;
 }
 
 - (NSArray<NSDictionary*>*)candidatesForInput:(NSString*)input {
