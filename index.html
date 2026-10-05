@@ -160,7 +160,7 @@ const buildInfoEl = document.getElementById("buildInfo");
 
 // 版本戳：make wasm 时由 tools/stamp_build.py 写入（日期 + commit 短哈希），
 // 页面上明示构建版本，避免 CDN/浏览器缓存导致新旧混用却看不出来。
-const BUILD_INFO = "2026-10-05 16d3d52";
+const BUILD_INFO = "2026-10-05 12759ca";
 buildInfoEl.textContent = BUILD_INFO || "开发版";
 
 // 加载期间锁住输入与配置，避免半初始化状态下打字/改配置。
@@ -181,11 +181,19 @@ function hideBoot() {
   for (const el of BOOT_CONTROLS) el.disabled = false;
 }
 
-// 带进度的 fetch：Content-Length 在 GitHub Pages 上可用。
+// 数据文件原始字节数（构建时由 tools/stamp_build.py 刷新）：gzip 传输下
+// Content-Length 是压缩字节数，而 resp.body 读到的是解压后字节，两者不可比。
+const DATA_SIZES = { "data/naive_pinyin.bigram.bin": 6696616, "data/naive_pinyin.dict.txt": 25462199 };
+
+// 带进度的 fetch。GitHub Pages 对文本资源带 Content-Encoding: gzip 下发，
+// 此时 Content-Length 是压缩字节数，分母改用构建时戳进去的原始大小；
+// 未压缩时 Content-Length 即原始大小，直接用。
 async function fetchWithProgress(url, label) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`${url}: HTTP ${resp.status}`);
-  const total = +resp.headers.get("Content-Length") || 0;
+  const enc = (resp.headers.get("Content-Encoding") || "").trim().toLowerCase();
+  const total = enc && enc !== "identity" ? (DATA_SIZES[url] || 0)
+    : +resp.headers.get("Content-Length") || 0;
   if (!resp.body || !total) return await resp.arrayBuffer();
   const reader = resp.body.getReader();
   const chunks = [];
