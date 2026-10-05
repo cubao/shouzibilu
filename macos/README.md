@@ -33,14 +33,21 @@ make macos-install  # 装入 ~/Library/Input Methods 并注册 + 启用
 
 ## 安装到其它机器
 
+两种分发包任选其一（`make` 都会在构建机自动编译 + ad-hoc 签名）：
+
 ```sh
-make macos-dist   # 产出 build/macos/Shouzibilu-macos.tar.gz
+make macos-dist   # 产出 build/macos/Shouzibilu-macos.tar.gz（命令行友好）
+make macos-dmg    # 产出 build/macos/Shouzibilu-macos.dmg（普通用户友好：
+                  # 目标机双击挂载即见 app，约 tar.gz/app 一半大小）
 ```
 
-把 tar.gz 拷到目标机（AirDrop / U 盘 / scp 均可），然后在**目标机**上：
+拷到目标机（AirDrop / U 盘 / scp 均可），然后在**目标机**上装到输入法
+目录 `~/Library/Input Methods`——app 不会自装（双击只是启动 IMK 主循环），
+且 dmg 里刻意不放 /Applications 软链接（拖过去完成不了安装）：
 
 ```sh
 mkdir -p ~/Library/Input\ Methods
+# tar.gz 路线：解包；dmg 路线：双击挂载后把 Shouzibilu.app 拖/拷进去
 tar -xzf Shouzibilu-macos.tar.gz -C ~/Library/Input\ Methods/
 # 若是经浏览器/聊天软件下载的（带隔离属性），先去掉：
 xattr -dr com.apple.quarantine ~/Library/Input\ Methods/Shouzibilu.app

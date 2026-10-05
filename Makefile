@@ -122,15 +122,22 @@ demo: $(WASM_OUT) $(DICT_OUT) $(WASM_DIR)/ziranma.json
 #   make macos          构建 build/macos/Shouzibilu.app
 #   make macos-install  装入 ~/Library/Input Methods 并注册/启用（之后手动选中）
 #   make macos-dist     打包 build/macos/Shouzibilu-macos.tar.gz（分发到其它机器）
+#   make macos-dmg      打包 build/macos/Shouzibilu-macos.dmg（同上，对普通用户
+#                       更友好：目标机双击挂载即见 app；目标机安装步骤见
+#                       macos/README.md「安装到其它机器」）
+# 注意：本机构建 native 需先 export SDKROOT=$(xcrun -sdk macosx --show-sdk-path)
+#       （CLT 27.0 SDK 的 tbd 与当前 clang 不兼容）。
 MACOS_BUILD := $(BUILD)/macos
 APP_NAME    := Shouzibilu
 APP         := $(MACOS_BUILD)/$(APP_NAME).app
+DMG         := $(MACOS_BUILD)/$(APP_NAME)-macos.dmg
+DMG_STAGE   := $(MACOS_BUILD)/dmg-stage
 MACOS_SRCS  := $(wildcard macos/Sources/*.mm)
 MACOS_OBJS  := $(patsubst macos/Sources/%.mm,$(MACOS_BUILD)/%.o,$(MACOS_SRCS))
 MACOS_BIN   := $(APP)/Contents/MacOS/$(APP_NAME)
 IM_INSTALL  := $(HOME)/Library/Input Methods
 
-.PHONY: macos macos-install macos-dist
+.PHONY: macos macos-install macos-dist macos-dmg
 
 macos: $(APP)
 	@echo "已构建 $(APP)"
@@ -157,6 +164,22 @@ $(APP): $(MACOS_BIN)
 macos-dist: macos
 	tar -czf $(MACOS_BUILD)/$(APP_NAME)-macos.tar.gz -C $(MACOS_BUILD) $(APP_NAME).app
 	@echo "已打包 $(MACOS_BUILD)/$(APP_NAME)-macos.tar.gz"
+
+# 打 dmg 安装镜像（UDZO 压缩，约 app 一半大）。里面只放 .app、不放
+# /Applications 软链接：app 双击只进 IMK 主循环、不会自装，拖到
+# /Applications 完成不了安装；目标机正确步骤是把 app 拷进
+# ~/Library/Input Methods 再 --install（见 macos/README.md）。
+macos-dmg: macos
+	rm -rf $(DMG_STAGE) && mkdir -p $(DMG_STAGE)
+	cp -R $(APP) $(DMG_STAGE)/$(APP_NAME).app
+	hdiutil create -volname $(APP_NAME) -srcfolder $(DMG_STAGE) \
+	  -ov -format UDZO $(DMG)
+	@echo "已打包 $(DMG)"
+	@echo "目标机安装（详见 macos/README.md「安装到其它机器」）:"
+	@echo "  1. 双击挂载 dmg，把 Shouzibilu.app 拷到 ~/Library/Input Methods/"
+	@echo "  2. xattr -dr com.apple.quarantine ~/Library/Input\ Methods/Shouzibilu.app"
+	@echo "  3. ~/Library/Input\ Methods/Shouzibilu.app/Contents/MacOS/Shouzibilu --install"
+	@echo "  4. 系统设置 > 键盘 > 输入法 中添加/选中「手自笔录」"
 
 macos-install: macos
 	mkdir -p "$(IM_INSTALL)"
