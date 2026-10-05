@@ -9,7 +9,7 @@
 //   --quit                                退出所有运行中的实例
 //   --help                                打印帮助
 //
-// Distributed under the BSD License.
+// Distributed under the GPL-3.0; see LICENSE.
 #import <Cocoa/Cocoa.h>
 #import <InputMethodKit/InputMethodKit.h>
 

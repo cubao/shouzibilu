@@ -22,6 +22,20 @@ int np_load_dict(void* ctx, const char* buf, int len) {
              : 0;
 }
 
+int np_load_lm(void* ctx, const char* buf, int len) {
+  if (!ctx || !buf || len <= 0) return 0;
+  return static_cast<EngineImpl*>(ctx)->LoadLm(buf, static_cast<size_t>(len))
+             ? 1
+             : 0;
+}
+
+int np_load_trigram(void* ctx, const char* buf, int len) {
+  if (!ctx || !buf || len <= 0) return 0;
+  return static_cast<EngineImpl*>(ctx)->LoadTrigram(buf, static_cast<size_t>(len))
+             ? 1
+             : 0;
+}
+
 const char* np_query(void* ctx, const char* input) {
   if (!ctx || !input) return nullptr;
   // wasm 单线程，JS 侧调用后立即拷贝，静态缓冲区安全。

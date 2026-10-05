@@ -75,7 +75,7 @@ wasm: $(WASM_OUT)
 
 $(WASM_OUT): $(LIB_SRCS) $(NP_DIR)/src/*.h $(NP_DIR)/include/naive_pinyin/*.h Makefile
 	$(EMXX) $(EMXXFLAGS) $(INCLUDES) $(LIB_SRCS) -o $@ \
-	  -s EXPORTED_FUNCTIONS='["_np_create","_np_load_dict","_np_query","_np_segment","_np_commit","_np_learn_word","_np_dump_user","_np_destroy","_malloc","_free"]' \
+	  -s EXPORTED_FUNCTIONS='["_np_create","_np_load_dict","_np_load_lm","_np_load_trigram","_np_query","_np_segment","_np_commit","_np_learn_word","_np_dump_user","_np_destroy","_malloc","_free"]' \
 	  -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","lengthBytesUTF8","stringToUTF8","HEAPU8"]' \
 	  -s MODULARIZE=1 \
 	  -s EXPORT_NAME=createNaivePinyin \
@@ -93,9 +93,10 @@ e2e:
 # 组装 npm/ 目录（产物拷入, 静态文件已在库中）, 发布见 README
 NPM_DIR := npm
 
-npm: $(WASM_OUT) $(DICT_OUT) $(WASM_DIR)/ziranma.json
+npm: $(WASM_OUT) $(DICT_OUT) $(WASM_DIR)/ziranma.json data/naive_pinyin.bigram.bin
 	cp $(WASM_OUT) $(WASM_DIR)/naive_pinyin.wasm $(NPM_DIR)/
 	cp $(DICT_OUT) $(NPM_DIR)/naive_pinyin.dict.txt
+	cp data/naive_pinyin.bigram.bin $(NPM_DIR)/
 	cp $(WASM_DIR)/ziranma.json $(NPM_DIR)/
 	cp ime-editor.js virtual-keyboard.js LICENSE $(NPM_DIR)/
 	@echo "npm 包已组装: $(NPM_DIR)/ (发布: make npm-publish)"
@@ -139,13 +140,14 @@ $(MACOS_BUILD)/%.o: macos/Sources/%.mm | $(NATIVE_DIR)
 
 -include $(MACOS_OBJS:.o=.d)
 
-$(MACOS_BIN): $(MACOS_OBJS) $(LIB_OBJS) macos/Info.plist macos/mappings.json macos/icon.icns macos/menuicon.pdf $(DICT_OUT) $(WASM_DIR)/ziranma.json
+$(MACOS_BIN): $(MACOS_OBJS) $(LIB_OBJS) macos/Info.plist macos/mappings.json macos/icon.icns macos/menuicon.pdf $(DICT_OUT) $(WASM_DIR)/ziranma.json data/naive_pinyin.bigram.bin
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	$(CXX) $(CXXFLAGS) -fobjc-arc $(MACOS_OBJS) $(LIB_OBJS) -o $@ \
 	  -framework Cocoa -framework InputMethodKit -framework Carbon
 	cp macos/Info.plist $(APP)/Contents/Info.plist
 	cp $(DICT_OUT) $(WASM_DIR)/ziranma.json macos/mappings.json \
-	   macos/icon.icns macos/menuicon.pdf $(APP)/Contents/Resources/
+	   macos/icon.icns macos/menuicon.pdf data/naive_pinyin.bigram.bin \
+	   $(APP)/Contents/Resources/
 
 $(APP): $(MACOS_BIN)
 	codesign --force --deep --sign - $(APP)
@@ -176,6 +178,26 @@ $(DICT_OUT): tools/build_dict.py $(JIEBA_DICT)
 	  --rime-ice $(RIME_ICE) \
 	  --jieba $(JIEBA_DICT) \
 	  --out $@
+
+# ---- bigram 语言模型（词格整句解码, 见 README「候选引擎 v2」）----
+# data/naive_pinyin.bigram.bin 是已入库的紧凑档（msime 全量表的 |值|>=1.0
+# 子集, ~6.4MB, wasm/npm/macOS 共用）。要全量档/重生成时:
+#   make lm-download   # 下载 msime 官方 bigram/trigram 全量表到 data/
+#   make lm            # 由全量表重新生成紧凑档
+MSIME_DICT_VER := dict-v2.0.7
+MSIME_DL := https://github.com/metasequoiaime/msime-dictionary/releases/download/$(MSIME_DICT_VER)
+
+lm-download:
+	curl -sL -o data/msime-bigram.bin $(MSIME_DL)/msime-bigram.bin
+	curl -sL -o data/msime-trigram.bin $(MSIME_DL)/msime-trigram.bin
+	shasum -a 256 -c tools/msime-ngram.sha256
+
+lm: data/naive_pinyin.bigram.bin
+
+data/naive_pinyin.bigram.bin: tools/subset_ngram.py data/msime-bigram.bin
+	python3 tools/subset_ngram.py \
+	  --input data/msime-bigram.bin \
+	  --output $@ --min-abs 1.0
 
 # 自然码双拼默认配置（前端作为默认 shuangpin map）
 ziranma: $(WASM_DIR)/ziranma.json

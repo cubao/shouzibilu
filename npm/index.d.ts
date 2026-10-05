@@ -51,6 +51,11 @@ declare module "@cubao/naive-pinyin" {
     commit(segments: Segment[]): void;
     learnWord(key: string, word: string): void;
     dumpUser(): UserFreqEntry[];
+    /** 加载 bigram 语言模型（MSNG v1 表，可选）；失败返回 false 并保持
+     *  无语言模型的 unigram 解码。 */
+    loadLm(data: Uint8Array): boolean;
+    /** Node 快捷方式：加载包内 naive_pinyin.bigram.bin。 */
+    loadBundledLm(): boolean;
     destroy(): void;
   }
 

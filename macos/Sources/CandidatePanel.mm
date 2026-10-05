@@ -1,6 +1,6 @@
 // SZBCandidatePanel 实现
 //
-// Distributed under the BSD License.
+// Distributed under the GPL-3.0; see LICENSE.
 #import "CandidatePanel.h"
 
 static const NSInteger kCols = 5;       // 每行 5 个候选

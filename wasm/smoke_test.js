@@ -124,6 +124,56 @@ async function main() {
   check("np_segment 双拼恒 2 键一站",
         JSON.stringify(seg2.boundaries) === "[0,2,4,6,8]");
 
+  // ---- bigram 语言模型（词格整句解码）----
+  const lmPath = path.join(__dirname, "../data/naive_pinyin.bigram.bin");
+  if (fs.existsSync(lmPath)) {
+    const lmData = fs.readFileSync(lmPath);
+    const ctxLm = Module.ccall("np_create", "number", ["string"], ["{}"]);
+    const lmPtr = Module._malloc(dictData.length);
+    Module.HEAPU8.set(dictData, lmPtr);
+    Module.ccall("np_load_dict", "number",
+                 ["number", "number", "number"],
+                 [ctxLm, lmPtr, dictData.length]);
+    Module._free(lmPtr);
+    const lmPtr2 = Module._malloc(lmData.length);
+    Module.HEAPU8.set(lmData, lmPtr2);
+    const lmOk = Module.ccall("np_load_lm", "number",
+                              ["number", "number", "number"],
+                              [ctxLm, lmPtr2, lmData.length]);
+    Module._free(lmPtr2);
+    check("np_load_lm ok", lmOk === 1);
+
+    const withLm = JSON.parse(Module.ccall("np_query", "string",
+                                           ["number", "string"],
+                                           [ctxLm, "jintiandetianqihenhao"]));
+    check("LM 整句 今天的天气很好",
+          withLm.candidates[0] && withLm.candidates[0].text === "今天的天气很好");
+    // 坏表拒绝后引擎仍可用（退回 unigram 解码）
+    const ctxBad = Module.ccall("np_create", "number", ["string"], ["{}"]);
+    const badDictPtr = Module._malloc(dictData.length);
+    Module.HEAPU8.set(dictData, badDictPtr);
+    Module.ccall("np_load_dict", "number",
+                 ["number", "number", "number"],
+                 [ctxBad, badDictPtr, dictData.length]);
+    Module._free(badDictPtr);
+    const badPtr = Module._malloc(4);
+    Module.HEAPU8.set(new Uint8Array([1, 2, 3, 4]), badPtr);
+    const badOk = Module.ccall("np_load_lm", "number",
+                               ["number", "number", "number"],
+                               [ctxBad, badPtr, 4]);
+    Module._free(badPtr);
+    check("np_load_lm 拒绝坏表", badOk === 0);
+    const badQuery = JSON.parse(Module.ccall("np_query", "string",
+                                             ["number", "string"],
+                                             [ctxBad, "nihaoshijie"]));
+    check("坏表回退 unigram 不崩溃",
+          badQuery.candidates && badQuery.candidates.length > 0);
+    Module.ccall("np_destroy", null, ["number"], [ctxLm]);
+    Module.ccall("np_destroy", null, ["number"], [ctxBad]);
+  } else {
+    console.log("SKIP  LM 测试（data/naive_pinyin.bigram.bin 不存在, 先 make lm-download lm）");
+  }
+
   Module.ccall("np_destroy", null, ["number"], [ctx]);
   Module.ccall("np_destroy", null, ["number"], [ctxFull]);
 

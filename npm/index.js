@@ -32,6 +32,19 @@ function loadBundledDict() {
   return fs.readFileSync(path.join(__dirname, "naive_pinyin.dict.txt"));
 }
 
+// Node 下读取包内 bigram 语言模型（可选，词格整句解码）。
+// 浏览器请自行 fetch（如 `@cubao/naive-pinyin/naive_pinyin.bigram.bin`）
+// 后传给 engine.loadLm()。
+function loadBundledLm() {
+  if (typeof window !== "undefined") {
+    throw new Error(
+      "浏览器环境请 fetch bigram 表后传给 engine.loadLm(data)");
+  }
+  const fs = require("fs");
+  const path = require("path");
+  return fs.readFileSync(path.join(__dirname, "naive_pinyin.bigram.bin"));
+}
+
 class Engine {
   constructor(M, ctx) {
     this.M = M;
@@ -93,6 +106,23 @@ class Engine {
   dumpUser() {
     const s = this.M.ccall("np_dump_user", "string", ["number"], [this.ctx]);
     return JSON.parse(s);
+  }
+
+  // 加载 bigram 语言模型（MSNG v1 表，可选）。成功返回 true；失败返回
+  // false 且引擎保持无语言模型的 unigram 解码（行为与从前一致）。
+  loadLm(data) {
+    const ptr = this.M._malloc(data.length);
+    this.M.HEAPU8.set(data, ptr);
+    const ok = this.M.ccall("np_load_lm", "number",
+                            ["number", "number", "number"],
+                            [this.ctx, ptr, data.length]);
+    this.M._free(ptr);
+    return ok === 1;
+  }
+
+  // Node 快捷方式：加载包内 bigram 表。浏览器请 fetch 后用 loadLm()。
+  loadBundledLm() {
+    return this.loadLm(loadBundledLm());
   }
 
   destroy() {

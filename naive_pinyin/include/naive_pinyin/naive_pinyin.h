@@ -1,7 +1,7 @@
 // naive_pinyin - 字母串到汉字候选的精简引擎
 // 手自笔录 (shouzibilu) 项目核心库
 //
-// Distributed under the BSD License.
+// Distributed under the GPL-3.0; see LICENSE.
 #pragma once
 
 #include <cstddef>

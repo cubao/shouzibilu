@@ -40,6 +40,14 @@ bool EngineImpl::LoadDict(const char* data, size_t size) {
   return true;
 }
 
+bool EngineImpl::LoadLm(const char* data, size_t size) {
+  return bigram_.Load(data, size);
+}
+
+bool EngineImpl::LoadTrigram(const char* data, size_t size) {
+  return trigram_.Load(data, size);
+}
+
 void EngineImpl::Commit(const std::string& segments_json) {
   nlohmann::json j;
   try {
@@ -78,6 +86,10 @@ std::string EngineImpl::Query(const std::string& input) const {
                   config_.shuangpin_map.empty() ? nullptr
                                                 : &config_.shuangpin_map,
                   &user_freq_);
+  if (config_.lattice.enabled && !bigram_.empty()) {
+    matcher.SetLm(&bigram_, trigram_.empty() ? nullptr : &trigram_,
+                  &config_.lattice);
+  }
   std::vector<MatchCandidate> candidates = matcher.Match(input);
 
   nlohmann::json out;

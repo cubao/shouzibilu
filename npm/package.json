@@ -1,7 +1,7 @@
 {
   "name": "@cubao/naive-pinyin",
   "version": "0.4.0",
-  "description": "字母串到汉字候选的精简拼音引擎 (WebAssembly)：全拼/双拼(自然码)/模糊音/整句输入/动态调频/自造词/音节边界；附浏览器 IME 编辑器",
+  "description": "字母串到汉字候选的精简拼音引擎 (WebAssembly)：全拼/双拼(自然码)/模糊音/整句输入(bigram 词格)/动态调频/自造词/音节边界；附浏览器 IME 编辑器",
   "main": "index.js",
   "types": "index.d.ts",
   "exports": {
@@ -11,7 +11,8 @@
     "./naive_pinyin.js": "./naive_pinyin.js",
     "./naive_pinyin.wasm": "./naive_pinyin.wasm",
     "./ziranma.json": "./ziranma.json",
-    "./naive_pinyin.dict.txt": "./naive_pinyin.dict.txt"
+    "./naive_pinyin.dict.txt": "./naive_pinyin.dict.txt",
+    "./naive_pinyin.bigram.bin": "./naive_pinyin.bigram.bin"
   },
   "files": [
     "index.js",
@@ -22,6 +23,7 @@
     "naive_pinyin.wasm",
     "ziranma.json",
     "naive_pinyin.dict.txt",
+    "naive_pinyin.bigram.bin",
     "README.md"
   ],
   "keywords": [
@@ -34,7 +36,7 @@
     "webassembly",
     "rime"
   ],
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/district10/shouzibilu.git"

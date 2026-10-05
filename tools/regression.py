@@ -44,12 +44,29 @@ CASES = [
     ("xianzai", [("first", "现在")], "高频词"),
 ]
 
+# 语言模型（--lm）开启下的整句质量断言：词格 bigram/trigram 解码。
+LM_CASES = [
+    # (输入, [断言...], 备注)
+    ("nihaoshijie", [("first", "你好世界")], "整句基本"),
+    ("jintiandetianqihenhao", [("first", "今天的天气很好")], "天气句"),
+    ("womenxuyaojiejuewenti", [("first", "我们需要解决问题")], "需要解决"),
+    ("tianxiawuxing", [("first", "天下五行")], "歧义切分 ti+an"),
+    ("jiejuefangan", [("first", "解决方案"),
+                      ("above", ("解决方案", "解决反感"))], "精确行全键优先"),
+    ("womenyaoyanjiuzhegefangan",
+     [("has", "我们要研究这个方案")], "备选切分递补方案"),
+    ("zheshiyigehenhaodejiejuefangan",
+     [("has", "这是一个很好的解决方案")], "长句备选递补"),
+    ("jintiankaihui", [("first", "今天开会")], "开会句"),
+    ("tamenlaileda", [("first", "他们来了大")], "尾字单字"),
+    ("zhongguorenminjiefangjun", [("first", "中国人民解放军")], "专名整词"),
+]
 
-def run_cases(cli, dict_path, config, cases, verbose):
+
+def run_cases(cli, dict_path, config, cases, verbose, lm_flags=None):
     inputs = [c[0] for c in cases]
-    proc = subprocess.run(
-        [cli, dict_path, config] + inputs,
-        capture_output=True, text=True, check=True)
+    cmd = [cli] + (lm_flags or []) + [dict_path, config] + inputs
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
     results = {}
     for line in proc.stdout.splitlines():
         inp, _, payload = line.partition(" => ")
@@ -88,11 +105,25 @@ def main():
     ap.add_argument("--cli", default="build/native/cli")
     ap.add_argument("--dict", default="data/naive_pinyin.dict.txt")
     ap.add_argument("--config", default="{}")
+    ap.add_argument("--lm", default=None,
+                    help="bigram 表路径；提供时额外运行 LM_CASES 断言")
+    ap.add_argument("--trigram", default=None, help="trigram 表路径（可选）")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
+    lm_flags = []
+    if args.lm:
+        lm_flags += ["--lm", args.lm]
+    if args.trigram:
+        lm_flags += ["--trigram", args.trigram]
+
     passed, failed = run_cases(args.cli, args.dict, args.config,
                                CASES, args.verbose)
+    if args.lm:
+        lm_passed, lm_failed = run_cases(args.cli, args.dict, args.config,
+                                         LM_CASES, args.verbose, lm_flags)
+        passed += lm_passed
+        failed += lm_failed
     print("----")
     print(f"{'OK' if failed == 0 else 'FAILED'}: {passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)

@@ -1,6 +1,6 @@
 // SZBAppDelegate - 持有引擎单例、中英文状态、输入法菜单动作
 //
-// Distributed under the BSD License.
+// Distributed under the GPL-3.0; see LICENSE.
 #import <Cocoa/Cocoa.h>
 
 @class SZBLEngine;

@@ -7,3 +7,4 @@ LICENSE
 node_modules/
 ime-editor.js
 virtual-keyboard.js
+naive_pinyin.bigram.bin

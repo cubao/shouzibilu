@@ -4,26 +4,51 @@
 #include <limits>
 #include <unordered_set>
 
+#include "lattice.h"
+#include "ngram.h"
+
 namespace naive_pinyin {
 
 namespace {
 
 constexpr double kNegInf = -1e18;
 
-// 一条词边：raw input [start, end) 对应词典中某个 key 的候选集。
-// key 是词典侧的音节序列（模糊变体展开后的实际命中路径）。
-struct WordEdge {
-  int start;
-  int end;
-  const std::vector<DictEntry>* entries;
-  std::string key;
-};
-
 bool IsInitial(const std::string& s) {
   static const std::unordered_set<std::string> kInitials = {
       "b", "p", "m", "f", "d", "t", "n", "l", "g", "k", "h",
       "j", "q", "x", "zh", "ch", "sh", "r", "z", "c", "s", "y", "w"};
   return kInitials.count(s) > 0;
+}
+
+// 从 pos 出发枚举词边：音节边 × 模糊变体，沿词典 trie 走。
+// key_path 累积词典侧音节路径（供调频叠加层查询）。
+void EnumWordEdges(const Segmentation& seg, int pos, const Dict::Node* node,
+                   int depth, int max_depth, const Matcher& matcher,
+                   int start, std::string* key_path,
+                   std::vector<WordEdge>* out) {
+  if (!node->entries.empty()) {
+    out->push_back({start, pos, &node->entries, *key_path});
+  }
+  if (depth >= max_depth) return;
+  // apostrophe 对词边透明：用户的手动分词提示不应阻断整词匹配。
+  if (seg.boundary[pos]) {
+    EnumWordEdges(seg, pos + 1, node, depth, max_depth, matcher, start,
+                  key_path, out);
+    return;
+  }
+  const size_t base_len = key_path->size();
+  for (const SyllableEdge& e : seg.edges_from[pos]) {
+    for (const std::string& v : matcher.Variants(e.syllable)) {
+      auto it = node->children.find(v);
+      if (it != node->children.end()) {
+        if (!key_path->empty()) key_path->push_back(' ');
+        *key_path += v;
+        EnumWordEdges(seg, e.end, it->second.get(), depth + 1, max_depth,
+                      matcher, start, key_path, out);
+        key_path->resize(base_len);
+      }
+    }
+  }
 }
 
 }  // namespace
@@ -72,40 +97,19 @@ std::vector<std::string> Matcher::Variants(const std::string& syllable) const {
   return out;
 }
 
-namespace {
-
-// 从 pos 出发枚举词边：音节边 × 模糊变体，沿词典 trie 走。
-// key_path 累积词典侧音节路径（供调频叠加层查询）。
-void EnumWordEdges(const Segmentation& seg, int pos, const Dict::Node* node,
-                   int depth, int max_depth, const Matcher& matcher,
-                   int start, std::string* key_path,
-                   std::vector<WordEdge>* out) {
-  if (!node->entries.empty()) {
-    out->push_back({start, pos, &node->entries, *key_path});
+std::vector<std::vector<WordEdge>> Matcher::EnumEdges(
+    const Segmentation& seg) const {
+  const int n = seg.length;
+  std::vector<std::vector<WordEdge>> edges(n + 1);
+  const int max_depth = dict_.max_key_length();
+  for (int i = 0; i <= n; ++i) {
+    if (seg.boundary[i]) continue;  // 词边不从撇号位置出发
+    std::string key_path;
+    EnumWordEdges(seg, i, dict_.root(), 0, max_depth, *this, i, &key_path,
+                  &edges[i]);
   }
-  if (depth >= max_depth) return;
-  // apostrophe 对词边透明：用户的手动分词提示不应阻断整词匹配。
-  if (seg.boundary[pos]) {
-    EnumWordEdges(seg, pos + 1, node, depth, max_depth, matcher, start,
-                  key_path, out);
-    return;
-  }
-  const size_t base_len = key_path->size();
-  for (const SyllableEdge& e : seg.edges_from[pos]) {
-    for (const std::string& v : matcher.Variants(e.syllable)) {
-      auto it = node->children.find(v);
-      if (it != node->children.end()) {
-        if (!key_path->empty()) key_path->push_back(' ');
-        *key_path += v;
-        EnumWordEdges(seg, e.end, it->second.get(), depth + 1, max_depth,
-                      matcher, start, key_path, out);
-        key_path->resize(base_len);
-      }
-    }
-  }
+  return edges;
 }
-
-}  // namespace
 
 std::vector<MatchCandidate> Matcher::Match(const std::string& input) const {
   std::vector<MatchCandidate> result;
@@ -115,25 +119,15 @@ std::vector<MatchCandidate> Matcher::Match(const std::string& input) const {
                          ? SegmentShuangpin(input, *shuangpin_map_)
                          : SegmentFullPinyin(input);
   const int n = seg.length;
-  const int max_depth = dict_.max_key_length();
 
-  // 预枚举每个起点的词边，fwd/bwd/候选生成共用。
-  std::vector<std::vector<WordEdge>> edges_cache(n + 1);
-  for (int i = 0; i <= n; ++i) {
-    if (!seg.boundary[i]) {
-      std::string key_path;
-      EnumWordEdges(seg, i, dict_.root(), 0, max_depth, *this, i, &key_path,
-                    &edges_cache[i]);
-    }
-  }
+  std::vector<std::vector<WordEdge>> edges = EnumEdges(seg);
   auto word_edges_from = [&](int pos) -> const std::vector<WordEdge>& {
-    return edges_cache[pos];
+    return edges[pos];
   };
 
   // 词条有效分 = 静态分 + 用户调频加分。
   auto effective = [&](const WordEdge& e, const DictEntry& entry) {
-    int boost = user_freq_ ? user_freq_->Boost(e.key, entry.word) : 0;
-    return entry.score + boost;
+    return Effective(e, entry);
   };
   // 词边的最优词条（有效分最高）。
   auto best_entry = [&](const WordEdge& e) -> const DictEntry* {
@@ -148,6 +142,73 @@ std::vector<MatchCandidate> Matcher::Match(const std::string& input) const {
     }
     return best;
   };
+
+  // ---- 词格 beam 解码（bigram/trigram 语言模型在位时）----
+  const bool lattice_on = lm_bigram_ != nullptr && lattice_opts_ != nullptr &&
+                          lattice_opts_->enabled;
+  if (lattice_on) {
+    std::vector<MatchCandidate> lattice_result = LatticeDecode(
+        seg, edges, *this, lm_bigram_, lm_trigram_, *lattice_opts_);
+    if (!lattice_result.empty()) {
+      // 候选编排（msime lattice/merge.rs 的语义：词格整句候选插在
+      // 连续的词典全键精确命中行之后，且权重不跨来源互比，列表顺序
+      // 即排序）：
+      //   1) 词典全键精确行（单个词条覆盖全部输入）按有效分降序；
+      //   2) 词格整句 n-best（去重）；
+      //   3) 词典前缀行（首音节词）按有效分降序填充。
+      const int m = lattice_result.front().consumed;
+      std::vector<MatchCandidate> merged;
+      std::unordered_set<std::string> seen;
+
+      struct Row {
+        const WordEdge* edge;
+        const DictEntry* entry;
+      };
+      auto rows_sorted = [&](bool exact) {
+        std::vector<Row> rows;
+        for (const WordEdge& e : word_edges_from(0)) {
+          if ((e.end == m) != exact) continue;
+          for (const auto& entry : *e.entries) rows.push_back({&e, &entry});
+        }
+        std::stable_sort(rows.begin(), rows.end(),
+                         [&](const Row& a, const Row& b) {
+                           return effective(*a.edge, *a.entry) >
+                                  effective(*b.edge, *b.entry);
+                         });
+        return rows;
+      };
+
+      auto push_row = [&](const Row& r, double score) {
+        if (seen.insert(r.entry->word).second) {
+          MatchCandidate c;
+          c.text = r.entry->word;
+          c.consumed = m;
+          c.score = score;
+          c.segments.emplace_back(r.edge->key, r.entry->word);
+          merged.push_back(std::move(c));
+        }
+      };
+
+      for (const Row& r : rows_sorted(/*exact=*/true)) {
+        push_row(r, effective(*r.edge, *r.entry));
+      }
+      for (const MatchCandidate& s : lattice_result) {
+        if (static_cast<int>(merged.size()) >= max_candidates_) break;
+        if (seen.insert(s.text).second) merged.push_back(s);
+      }
+      if (static_cast<int>(merged.size()) < max_candidates_) {
+        for (const Row& r : rows_sorted(/*exact=*/false)) {
+          if (static_cast<int>(merged.size()) >= max_candidates_) break;
+          push_row(r, effective(*r.edge, *r.entry));
+        }
+      }
+      if (static_cast<int>(merged.size()) > max_candidates_) {
+        merged.resize(max_candidates_);
+      }
+      return merged;
+    }
+    // 词格没有解出路径（不应发生，与 DP 可达性一致）→ 落回 unigram DP。
+  }
 
   // ---- 前向 DP：fwd[i] = 到达 raw 下标 i 的最高分 ----
   std::vector<double> fwd(n + 1, kNegInf);

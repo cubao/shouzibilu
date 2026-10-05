@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "lattice_options.h"
 #include "user_freq.h"
 
 namespace naive_pinyin {
@@ -33,6 +34,10 @@ struct Config {
   // 动态调频：加分参数与持久化叠加层（np_dump_user 的导出回传）。
   UserBoostParams user_boost;
   std::vector<UserFreqEntry> user_freq;
+
+  // 词格解码参数（bigram/trigram 表经 np_load_lm/np_load_trigram 载入；
+  // lattice.enabled=false 时即使表在位也走 unigram DP）。
+  LatticeOptions lattice;
 
   // 解析 JSON 配置。解析失败抛 std::runtime_error。
   static Config FromJson(const std::string& json_str);

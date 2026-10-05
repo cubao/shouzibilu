@@ -1,6 +1,6 @@
 // SZBLEngine - naive_pinyin C++ 核心的 ObjC 封装
 //
-// Distributed under the BSD License.
+// Distributed under the GPL-3.0; see LICENSE.
 #import <Foundation/Foundation.h>
 
 NS_ASSUME_NONNULL_BEGIN

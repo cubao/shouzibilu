@@ -6,7 +6,7 @@
 // 布局：5 列 × 最多 4 行；行级高亮（整行蓝底）。
 // 列选择键提示：第 1 列 ␣（空格），其后 2 3 8 9。
 //
-// Distributed under the BSD License.
+// Distributed under the GPL-3.0; see LICENSE.
 #import <Cocoa/Cocoa.h>
 
 NS_ASSUME_NONNULL_BEGIN

@@ -3,6 +3,7 @@
 
 #include "config.h"
 #include "dict.h"
+#include "ngram.h"
 #include "user_freq.h"
 #include <naive_pinyin/naive_pinyin.h>
 
@@ -15,6 +16,11 @@ class EngineImpl : public Engine {
   bool LoadDict(const char* data, size_t size) override;
   std::string Query(const std::string& input) const override;
   std::string Segment(const std::string& input) const override;
+
+  // 加载 n-gram 增量表（MSNG v1 格式，见 ngram.h）。bigram 在位时
+  // Query 走词格 beam 解码；失败返回 false 且保持无语言模型行为。
+  bool LoadLm(const char* data, size_t size);
+  bool LoadTrigram(const char* data, size_t size);
 
   // 提交一个候选的分段（动态调频）。segments_json 形如
   // [{"key":"ni hao","word":"你好"}, ...]，解析失败静默忽略。
@@ -30,6 +36,8 @@ class EngineImpl : public Engine {
   Config config_;
   Dict dict_;
   UserFreq user_freq_;
+  NgramTable bigram_;
+  NgramTable trigram_;
 };
 
 }  // namespace naive_pinyin

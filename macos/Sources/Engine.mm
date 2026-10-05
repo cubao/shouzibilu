@@ -1,6 +1,6 @@
 // SZBLEngine 实现
 //
-// Distributed under the BSD License.
+// Distributed under the GPL-3.0; see LICENSE.
 #import "Engine.h"
 
 #include <cstring>
@@ -120,6 +120,23 @@ withIntermediateDirectories:YES
       }
     }
   }
+
+  // bigram 语言模型（词格整句解码）：先取用户目录 bigram.bin（可自行
+  // 换成 msime 全量档），否则用 bundle 内置的紧凑档；都没有就退回
+  // unigram 解码（行为同旧版）。
+  NSURL* builtinLm = [[NSBundle mainBundle]
+      URLForResource:@"naive_pinyin.bigram" withExtension:@"bin"];
+  NSURL* userLm = [_supportDir URLByAppendingPathComponent:@"bigram.bin"];
+  NSData* lmData = [NSData dataWithContentsOfURL:userLm];
+  if (!lmData.length) lmData = [NSData dataWithContentsOfURL:builtinLm];
+  if (lmData.length) {
+    if (np_load_lm(_ctx, (const char*)lmData.bytes, (int)lmData.length) == 0) {
+      NSLog(@"Shouzibilu: bigram load failed, falling back to unigram");
+    }
+  } else {
+    NSLog(@"Shouzibilu: no bigram table found, unigram decoding");
+  }
+
   [self loadMappings];
   _dirty = NO;
 }

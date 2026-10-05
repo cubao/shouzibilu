@@ -190,6 +190,7 @@ let ime = null;
 let vkb = null;
 let spFinals = null;   // 键 -> [韵母]（自然码反查表，双拼键面标注用）
 let loadMs = "?";
+let bigramData = null;  // bigram 语言模型（词格整句解码），异步加载可选
 
 // 从双拼码表（编码->拼音）反推每个键携带的韵母：只取声母编码
 // （零声母二字拼如 ai/er 按字面打，不占键位标注）；zh/ch/sh = v/i/u 三键。
@@ -268,6 +269,15 @@ async function boot() {
     fetch("data/naive_pinyin.dict.txt").then(r => r.arrayBuffer()),
     fetch("wasm/ziranma.json").then(r => r.json()),
   ]);
+  // bigram 语言模型异步加载：就绪后注入当前引擎；失败（如 404）静默
+  // 退回 unigram 解码，页面行为与从前一致。
+  fetch("data/naive_pinyin.bigram.bin").then(r => {
+    if (!r.ok) throw new Error(r.status);
+    return r.arrayBuffer();
+  }).then(buf => {
+    bigramData = buf;
+    if (engineCtx) rebuildEngine();
+  }).catch(() => {});
 
   // 恢复设置
   const s = loadSettings();
@@ -319,6 +329,13 @@ function rebuildEngine() {
   Module.ccall("np_load_dict", "number", ["number","number","number"], [engineCtx, ptr, dictData.byteLength]);
   loadMs = (performance.now() - t0).toFixed(0);
   Module._free(ptr);
+  if (bigramData) {
+    const lmPtr = Module._malloc(bigramData.byteLength);
+    Module.HEAPU8.set(new Uint8Array(bigramData), lmPtr);
+    Module.ccall("np_load_lm", "number", ["number","number","number"],
+                 [engineCtx, lmPtr, bigramData.byteLength]);
+    Module._free(lmPtr);
+  }
   updateStatus();
 }
 
@@ -354,8 +371,10 @@ function scheduleSave() {
 
 function updateStatus() {
   const learned = JSON.parse(localStorage.getItem(LS_FREQ) || "[]").length;
+  const lm = bigramData
+    ? ` · 语言模型 ${(bigramData.byteLength/1048576).toFixed(1)} MB` : "";
   status.textContent =
-    `词典 ${(dictData.byteLength/1048576).toFixed(1)} MB · 解析 ${loadMs} ms · 学习数据 ${learned} 条\n` +
+    `词典 ${(dictData.byteLength/1048576).toFixed(1)} MB · 解析 ${loadMs} ms${lm} · 学习数据 ${learned} 条\n` +
     "i 进入插入 · Esc/Ctrl+[ 回普通 · / 搜索 · , 动态词 · ←→ 组词光标 · Shift 切换中英文\n" +
     "注意：请把 OS 输入法切到英文状态使用（网页无法压制激活的系统输入法）。";
 }

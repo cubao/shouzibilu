@@ -1,6 +1,6 @@
 // naive_pinyin C API - wasm / JS 边界
 //
-// Distributed under the BSD License.
+// Distributed under the GPL-3.0; see LICENSE.
 #pragma once
 
 #ifdef __cplusplus
@@ -12,6 +12,13 @@ void* np_create(const char* config_json);
 
 // 加载词典缓冲区。成功返回 1，失败返回 0。
 int np_load_dict(void* ctx, const char* buf, int len);
+
+// 加载 bigram 语言模型增量表（MSNG v1 格式）。成功返回 1；失败返回 0，
+// 引擎保持无语言模型的 unigram 解码（行为与未加载一致）。
+int np_load_lm(void* ctx, const char* buf, int len);
+
+// 加载 trigram 表（可选，对 n-best 整句重排）。成功返回 1，失败返回 0。
+int np_load_trigram(void* ctx, const char* buf, int len);
 
 // 查询候选。返回 JSON 字符串指针（引擎内部静态缓冲区，
 // 下次调用即失效，调用方需立即拷贝）。ctx 非法时返回 NULL。

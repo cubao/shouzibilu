@@ -1,6 +1,6 @@
 // SZBInstaller 实现
 //
-// Distributed under the BSD License.
+// Distributed under the GPL-3.0; see LICENSE.
 #import "Installer.h"
 
 #import <Carbon/Carbon.h>

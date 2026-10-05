@@ -80,6 +80,45 @@ Config Config::FromJson(const std::string& json_str) {
     }
   }
 
+  if (j.contains("lattice")) {
+    const auto& lt = j.at("lattice");
+    if (lt.is_boolean()) {
+      cfg.lattice.enabled = lt.get<bool>();
+    } else if (lt.is_object()) {
+      cfg.lattice.enabled = lt.value("enabled", cfg.lattice.enabled);
+      cfg.lattice.beam = lt.value("beam", cfg.lattice.beam);
+      cfg.lattice.nbest = lt.value("nbest", cfg.lattice.nbest);
+      cfg.lattice.max_entries_per_edge =
+          lt.value("max_entries_per_edge", cfg.lattice.max_entries_per_edge);
+      cfg.lattice.max_alternates =
+          lt.value("max_alternates", cfg.lattice.max_alternates);
+      cfg.lattice.bigram_weight =
+          lt.value("bigram_weight", cfg.lattice.bigram_weight);
+      cfg.lattice.trigram_weight =
+          lt.value("trigram_weight", cfg.lattice.trigram_weight);
+      cfg.lattice.phrase_bonus = lt.value("phrase_bonus", cfg.lattice.phrase_bonus);
+      cfg.lattice.unigram_char_span =
+          lt.value("unigram_char_span", cfg.lattice.unigram_char_span);
+      cfg.lattice.unigram_char_floor =
+          lt.value("unigram_char_floor", cfg.lattice.unigram_char_floor);
+      cfg.lattice.unigram_phrase_span =
+          lt.value("unigram_phrase_span", cfg.lattice.unigram_phrase_span);
+      cfg.lattice.personal_weight =
+          lt.value("personal_weight", cfg.lattice.personal_weight);
+      cfg.lattice.personal_max =
+          lt.value("personal_max", cfg.lattice.personal_max);
+      if (cfg.lattice.beam <= 0 || cfg.lattice.nbest <= 0 ||
+          cfg.lattice.max_entries_per_edge <= 0 ||
+          cfg.lattice.max_alternates < 0) {
+        throw std::runtime_error(
+            "lattice beam/nbest/max_entries_per_edge must be positive, "
+            "max_alternates non-negative");
+      }
+    } else {
+      throw std::runtime_error("lattice must be a boolean or an object");
+    }
+  }
+
   return cfg;
 }
 

@@ -17,7 +17,7 @@
 //   连续分次上屏拼出的 2-8 字串自动学习为新词（np_learn_word）
 //   Cmd/Ctrl/Opt 组合键一律透给应用
 //
-// Distributed under the BSD License.
+// Distributed under the GPL-3.0; see LICENSE.
 #import <InputMethodKit/InputMethodKit.h>
 
 #import "AppDelegate.h"

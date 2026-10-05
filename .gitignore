@@ -2,3 +2,7 @@ build/
 data/jieba_dict.txt
 __pycache__/
 .DS_Store
+# msime 全量 n-gram 表与语料（make lm-download 下载, 不入库; 紧凑档 naive_pinyin.bigram.bin 入库）
+data/msime-bigram.bin
+data/msime-trigram.bin
+data/essay.txt

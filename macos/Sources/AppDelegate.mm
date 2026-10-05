@@ -1,6 +1,6 @@
 // SZBAppDelegate 实现
 //
-// Distributed under the BSD License.
+// Distributed under the GPL-3.0; see LICENSE.
 #import "AppDelegate.h"
 
 #import "Engine.h"

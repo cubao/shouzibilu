@@ -12,7 +12,10 @@ AI 时代，留一个独立的中文输入环境，手写一点文字。
 在浏览器网页内提供一个完全自定义的中文输入法。
 
 - **全拼 + 双拼**（默认自然码，映射表走 JSON 配置，任意方案可配）
-- **整句输入**：自动音节切分 + DP 选最优路径
+- **整句输入（候选引擎 v2）**：最少段音节切分 + 词格 beam 解码 +
+  bigram/trigram 语言模型（增量 ln P(next|prev)/P(next)），N-best 整句 +
+  词典精确行优先编排 + 备选切分递补（移植自 msime，见「数据来源与许可」；
+  无语言模型时自动退回 unigram DP，行为同 v1）
 - **模糊音**：可配置的模糊音对（zh/z、n/l、in/ing……）
 - **自定义词表**：JSON 配置追加用户词条
 - **动态词**：`,check` → ✅、`,date` → 今天日期，`,` 开头的纯映射（`eval:` 可执行 JS）
@@ -25,6 +28,9 @@ AI 时代，留一个独立的中文输入环境，手写一点文字。
   长按 ←/→ = Home/End、👆 长按放大镜拖光标；打开时屏蔽系统键盘
 - **词库**：雾凇拼音 [rime-ice](https://github.com/iDvel/rime-ice)（简体、现代词频）
   + [rime-essay](https://github.com/rime/rime-essay) 单字频率表，离线转成紧凑文本格式
+- **语言模型**：[msime](https://github.com/metasequoiaime/msime) 以中文维基百科
+  语料统计的 bigram/trigram 增量表；仓库内置按 |增量|≥1.0 裁出的紧凑档
+  （`data/naive_pinyin.bigram.bin`，~6.4MB），`make lm-download` 可取全量档
 
 **明确不做**：简拼、编辑距离纠错、繁简切换、Lua、云词库。
 （标点三种风格、Shift 中英切换 + 大写直通、动态调频、自造词学习均已实现。）
@@ -37,7 +43,8 @@ ime-editor.js          IME 编辑器（键盘接管 / 候选弹窗 / 动态词 /
 virtual-keyboard.js    触屏虚拟键盘（键面随布局表渲染，经 ime.sendKey 注入）
 naive_pinyin/          C++17 库本体
   include/naive_pinyin/  对外头文件（C++ API + C API）
-  src/                   实现
+  src/                   实现（matcher 词典 DP；lattice 词格 beam 解码；
+                          ngram MSNG 语言模型表）
 third_party/nlohmann/  json.hpp（header-only，拷自 nlohmann/json）
 tools/                 Python 离线工具（词典转换等，不进 wasm 依赖链）
 tests/                 native 单元测试（自带轻量框架，无 gtest）
@@ -95,12 +102,14 @@ make test     # 构建并运行 native 单元测试（日常开发主用）
 make native   # 只构建
 make cli      # 命令行查询工具（native 调试）
 make dict     # 生成精简词典（依赖 ../rime-ice）
+make lm-download  # 下载 msime 全量 bigram/trigram 表到 data/（不入库）
+make lm       # 由全量表生成紧凑档 data/naive_pinyin.bigram.bin
 make ziranma  # 生成自然码双拼默认配置 wasm/ziranma.json
 make wasm     # 编译 WebAssembly（先 source ../emsdk/emsdk_env.sh）
 make smoke    # node 冒烟测试 wasm 产物
 make e2e      # 浏览器端到端冒烟（需 playwright + Chromium，缺依赖自动 SKIP）
 make demo     # 起本地服务，打开 http://localhost:8000/
-make regression  # 排序质量回归（21 条断言）
+make regression  # 排序质量回归（无 LM 21 条 + LM 整句 10 条; --lm 见 tools/regression.py）
 make npm      # 组装 npm 包到 npm/（@cubao/naive-pinyin）
 make npm-test # 组装并自测 npm 包封装
 make macos    # 构建 macOS 输入法 build/macos/Shouzibilu.app
@@ -125,6 +134,8 @@ make clean
 ```c
 void*      np_create(const char* config_json);      // 创建引擎
 int        np_load_dict(void* ctx, const char* buf, int len);
+int        np_load_lm(void* ctx, const char* buf, int len);      // bigram 表（可选）
+int        np_load_trigram(void* ctx, const char* buf, int len); // trigram 表（可选）
 const char* np_query(void* ctx, const char* input); // 返回 JSON 候选串
 void       np_destroy(void* ctx);
 ```
@@ -214,6 +225,27 @@ localStorage（页面隐藏时冲刷），刷新不丢。
 ## 致谢
 
 - [librime / Rime 输入法](https://github.com/rime/librime) —— 算法蓝本（音节切分、DP 整句匹配）
+- [msime 水杉输入法](https://github.com/metasequoiaime/msime) —— 候选引擎 v2
+  蓝本与语言模型数据（词格 beam 解码、bigram/trigram 表；GPL-3.0）
 - [雾凇拼音 rime-ice](https://github.com/iDvel/rime-ice) —— 词库
 - [rime-essay](https://github.com/rime/rime-essay) —— 单字频率表
+- [中文维基百科](https://dumps.wikimedia.org/zhwiki/) —— n-gram 语料（CC-BY-SA 4.0）
 - [nlohmann/json](https://github.com/nlohmann/json) —— JSON 解析
+
+## 数据来源与许可
+
+本项目整体以 **GPL-3.0** 分发（见 `LICENSE`）。候选引擎 v2 的词格解码、
+评分系数与 n-gram 表格式移植自 [msime](https://github.com/metasequoiaime/msime)
+（GPL-3.0，其引擎本身承自 libpinyin/sunpinyin 一脉的公开设计），
+移植落在 `naive_pinyin/src/lattice*.{h,cc}`、`ngram.{h,cc}` 与
+`lattice_options.h`（各文件头注明出处）。
+
+| 数据 | 来源 | 许可 |
+|---|---|---|
+| `data/naive_pinyin.dict.txt` | 雾凇拼音 rime-ice + jieba 词频 blend | GPL-3.0（rime-ice） |
+| `data/naive_pinyin.bigram.bin`（紧凑档） | msime 全量 bigram 表按 \|增量\|≥1.0 裁剪（`tools/subset_ngram.py`） | CC-BY-SA 4.0（维基百科语料派生），随本项目按 GPL-3.0 分发 |
+| `msime-bigram.bin` / `msime-trigram.bin`（全量档，不入库） | [msime-dictionary releases](https://github.com/metasequoiaime/msime-dictionary/releases)（`make lm-download`，sha256 见 `tools/msime-ngram.sha256`） | CC-BY-SA 4.0（语料：中文维基百科 20260901 dump，正文另受 GFDL 约束） |
+| `wasm/ziranma.json` | 自然码双拼码表（社区通行方案） | — |
+
+再分发 bigram/trigram 表时须保留对中文维基百科的署名。npm 包
+`@cubao/naive-pinyin` 随本项目同以 GPL-3.0-only 分发。
