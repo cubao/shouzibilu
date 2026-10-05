@@ -3,9 +3,12 @@
 字母串 → 汉字候选的精简拼音引擎（WebAssembly）。手自笔录项目核心库。
 
 - 全拼 + 双拼（内置自然码码表，任意方案可配）
-- 整句输入：自动音节切分 + DP 最优路径
+- 整句输入：最少段音节切分 + 词格 beam 解码 + bigram 语言模型（可选，
+  N-best 整句 + 词典精确行优先编排；未加载时退回 unigram DP）
 - 模糊音（可配）、动态调频、自造词学习
-- wasm 仅 ~160KB，内置精简词库（雾凇拼音 + jieba 词频，4.2MB）
+- wasm 仅 ~230KB，内置精简词库（雾凇拼音 + jieba 词频，4.2MB）
+- 许可：GPL-3.0-only（词格引擎与语言模型移植自 msime，语料中文维基百科
+  CC-BY-SA 4.0，详见仓库 README「数据来源与许可」）
 
 ## Node
 
@@ -37,6 +40,13 @@ engine.segment("wodedkdp");
 // => { input, boundaries: [0,2,4,6,8], path: [0,2,4,6,8] }
 // boundaries = 音节 DAG 全边界（歧义切分的所有边界都可达）；
 // path = 贪心最长边主切分（preedit 分词显示用）。
+
+// bigram 语言模型（可选）：加载后整句解码质量显著提升
+engine.loadBundledLm();                       // Node：读包内 bigram 表
+// 浏览器：
+//   const bin = await fetch(url_of('naive_pinyin.bigram.bin')).then(r => r.arrayBuffer());
+//   engine.loadLm(new Uint8Array(bin));
+// 失败返回 false，引擎保持无语言模型解码（行为同 0.4.x）。
 ```
 
 ## 浏览器 IME 编辑器（ime-editor）
