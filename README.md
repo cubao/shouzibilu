@@ -26,8 +26,9 @@ AI 时代，留一个独立的中文输入环境，手写一点文字。
   键面随布局表渲染，按键与物理键盘同一管线；数字/符号顶部两排直按，
   双拼时字母键标注自然码韵母（浅绿小字）；sticky 修饰键、中/EN 专用键、
   长按 ←/→ = Home/End、👆 长按放大镜拖光标；打开时屏蔽系统键盘
-- **词库**：雾凇拼音 [rime-ice](https://github.com/iDvel/rime-ice)（简体、现代词频）
-  + [rime-essay](https://github.com/rime/rime-essay) 单字频率表，离线转成紧凑文本格式
+- **词库**：[msime](https://github.com/metasequoiaime/msime) 官方词典
+  `msime-pinyin.db`（~95 万组词条，与词格评分公式逐字一致，
+  `tools/build_dict_msime.py` 转换为紧凑文本格式入库）
 - **语言模型**：[msime](https://github.com/metasequoiaime/msime) 以中文维基百科
   语料统计的 bigram/trigram 增量表；仓库内置按 |增量|≥1.0 裁出的紧凑档
   （`data/naive_pinyin.bigram.bin`，~6.4MB），`make lm-download` 可取全量档
@@ -50,7 +51,9 @@ tools/                 Python 离线工具（词典转换等，不进 wasm 依�
 tests/                 native 单元测试（自带轻量框架，无 gtest）
 macos/                 macOS 输入法（InputMethodKit，复用同一核心，见 macos/README.md）
 wasm/                  wasm 产物（已入库供 Pages 部署）与 JS glue、node 冒烟测试
-data/                  生成的词典（naive_pinyin.dict.txt 已入库；jieba 源文件 gitignore）
+data/                  词典与语言模型（naive_pinyin.dict.txt 由 msime-pinyin.db
+                        转换生成、naive_pinyin.bigram.bin 紧凑 bigram 档，均已入库；
+                        全量 db/bigram 源文件 gitignore，make msime-dict-download / lm-download 取）
 ```
 
 ## npm 包（@cubao/naive-pinyin）
@@ -101,7 +104,8 @@ Deploy from a branch → 选 `dev` 分支 / (root) 即可，访问
 make test     # 构建并运行 native 单元测试（日常开发主用）
 make native   # 只构建
 make cli      # 命令行查询工具（native 调试）
-make dict     # 生成精简词典（依赖 ../rime-ice）
+make msime-dict-download  # 下载 msime 官方词典 db（~74MB, sha256 校验, 不入库）
+make dict     # 由 db 转换生成词典 data/naive_pinyin.dict.txt
 make lm-download  # 下载 msime 全量 bigram/trigram 表到 data/（不入库）
 make lm       # 由全量表生成紧凑档 data/naive_pinyin.bigram.bin
 make ziranma  # 生成自然码双拼默认配置 wasm/ziranma.json
@@ -126,8 +130,7 @@ make clean
 | emsdk | `../emsdk` | wasm 构建 |
 | librime | `../librime` | 算法蓝本（不链接） |
 | nlohmann/json | `../json` | 已拷入 `third_party/` |
-| rime-ice | `../rime-ice` | 词库源（离线处理） |
-| rime-essay | `../rime-essay` | 单字频率表（离线处理） |
+| msime-pinyin.db | msime-dictionary releases | 词表源（`make msime-dict-download`） |
 
 ## wasm 接口（C API + JSON 字符串）
 
@@ -226,9 +229,8 @@ localStorage（页面隐藏时冲刷），刷新不丢。
 
 - [librime / Rime 输入法](https://github.com/rime/librime) —— 算法蓝本（音节切分、DP 整句匹配）
 - [msime 水杉输入法](https://github.com/metasequoiaime/msime) —— 候选引擎 v2
-  蓝本与语言模型数据（词格 beam 解码、bigram/trigram 表；GPL-3.0）
-- [雾凇拼音 rime-ice](https://github.com/iDvel/rime-ice) —— 词库
-- [rime-essay](https://github.com/rime/rime-essay) —— 单字频率表
+  蓝本、词表与语言模型数据（词格 beam 解码、msime-pinyin.db、
+  bigram/trigram 表；GPL-3.0）
 - [中文维基百科](https://dumps.wikimedia.org/zhwiki/) —— n-gram 语料（CC-BY-SA 4.0）
 - [nlohmann/json](https://github.com/nlohmann/json) —— JSON 解析
 
@@ -242,8 +244,9 @@ localStorage（页面隐藏时冲刷），刷新不丢。
 
 | 数据 | 来源 | 许可 |
 |---|---|---|
-| `data/naive_pinyin.dict.txt` | 雾凇拼音 rime-ice + jieba 词频 blend | GPL-3.0（rime-ice） |
+| `data/naive_pinyin.dict.txt` | msime-pinyin.db（dict-v2.0.7）转换，score=1000·ln(weight)/18.4 与词格评分逐字一致 | 随 msime 分发（上游含 rime-ice 等，逐项见其 NOTICE），本项目按 GPL-3.0 分发 |
 | `data/naive_pinyin.bigram.bin`（紧凑档） | msime 全量 bigram 表按 \|增量\|≥1.0 裁剪（`tools/subset_ngram.py`） | CC-BY-SA 4.0（维基百科语料派生），随本项目按 GPL-3.0 分发 |
+| `msime-pinyin.db`（词典源，不入库） | [msime-dictionary releases](https://github.com/metasequoiaime/msime-dictionary/releases)（`make msime-dict-download`，sha256 见 `tools/msime-dict.sha256`） | 随 msime 分发，本项目按 GPL-3.0 分发 |
 | `msime-bigram.bin` / `msime-trigram.bin`（全量档，不入库） | [msime-dictionary releases](https://github.com/metasequoiaime/msime-dictionary/releases)（`make lm-download`，sha256 见 `tools/msime-ngram.sha256`） | CC-BY-SA 4.0（语料：中文维基百科 20260901 dump，正文另受 GFDL 约束） |
 | `wasm/ziranma.json` | 自然码双拼码表（社区通行方案） | — |
 

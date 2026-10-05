@@ -40,6 +40,20 @@
     display: none;
   }
   details { margin-top: 12px; font-size: 14px; color: #666; }
+  h1 { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .gh-star { font-size: 14px; font-weight: normal; text-decoration: none;
+    color: #24292f; background: #f6f8fa; border: 1px solid #d0d7de;
+    border-radius: 6px; padding: 2px 10px; }
+  .gh-star:hover { background: #eef1f4; }
+  #buildInfo { font-size: 13px; font-weight: normal; color: #999; }
+  #boot { position: fixed; inset: 0; background: rgba(255,255,255,.92);
+    display: flex; align-items: center; justify-content: center; z-index: 99; }
+  #bootCard { width: min(420px, 80vw); text-align: center; color: #444; }
+  #bootBarWrap { height: 6px; background: #e5e7eb; border-radius: 3px;
+    overflow: hidden; margin: 14px 0 10px; }
+  #bootBar { height: 100%; width: 0%; background: #4a89dc;
+    transition: width .15s ease; }
+  #bootMsg { font-size: 13px; color: #777; min-height: 1.4em; }
   #mappings {
     width: 100%; box-sizing: border-box; min-height: 180px;
     font: 13px/1.5 ui-monospace, Menlo, monospace; margin-top: 8px;
@@ -47,7 +61,19 @@
 </style>
 </head>
 <body>
-<h1>手自笔录 (shǒuzìbǐlù)</h1>
+<h1>手自笔录 (shǒuzìbǐlù)
+  <a class="gh-star" href="https://github.com/cubao/shouzibilu"
+     target="_blank" rel="noopener"
+     title="GitHub 仓库（欢迎 Star）">★ Star on GitHub</a>
+  <span id="buildInfo"></span>
+</h1>
+<div id="boot">
+  <div id="bootCard">
+    <div>手自笔录 · 加载中</div>
+    <div id="bootBarWrap"><div id="bootBar"></div></div>
+    <div id="bootMsg">初始化…</div>
+  </div>
+</div>
 <div class="bar">
   键盘:
   <select id="keyMode" title="按键识别方式&#10;物理键 (e.code)：按键盘物理位置识别，配合布局表翻译成字母——系统键盘布局怎么设都不影响（推荐，可完全屏蔽系统布局）&#10;字母 (e.key)：按系统实际产出的字母识别（系统是 Dvorak 就出 Dvorak 字母）">
@@ -127,6 +153,55 @@ const vkbSel = document.getElementById("vkb");
 const coarse = matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
 const mappingsTa = document.getElementById("mappings");
 const mappingsMsg = document.getElementById("mappingsMsg");
+const bootEl = document.getElementById("boot");
+const bootBar = document.getElementById("bootBar");
+const bootMsg = document.getElementById("bootMsg");
+const buildInfoEl = document.getElementById("buildInfo");
+
+// 版本戳：make wasm 时由 tools/stamp_build.py 写入（日期 + commit 短哈希），
+// 页面上明示构建版本，避免 CDN/浏览器缓存导致新旧混用却看不出来。
+const BUILD_INFO = "2026-10-05 16d3d52";
+buildInfoEl.textContent = BUILD_INFO || "开发版";
+
+// 加载期间锁住输入与配置，避免半初始化状态下打字/改配置。
+const BOOT_CONTROLS = [
+  editor, mappingsTa, schemeSel, layoutSel, keyModeSel, vimBox, punctSel,
+  fuzzyBox, pagingSel, vkbSel,
+  ...document.querySelectorAll(".bar button"),
+  ...document.querySelectorAll("#mappings + div button"),
+];
+for (const el of BOOT_CONTROLS) el.disabled = true;
+
+function setBoot(msg, frac) {
+  bootMsg.textContent = msg;
+  bootBar.style.width = `${Math.round(Math.max(0, Math.min(1, frac)) * 100)}%`;
+}
+function hideBoot() {
+  bootEl.remove();
+  for (const el of BOOT_CONTROLS) el.disabled = false;
+}
+
+// 带进度的 fetch：Content-Length 在 GitHub Pages 上可用。
+async function fetchWithProgress(url, label) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`${url}: HTTP ${resp.status}`);
+  const total = +resp.headers.get("Content-Length") || 0;
+  if (!resp.body || !total) return await resp.arrayBuffer();
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    got += value.length;
+    setBoot(`${label} ${(got / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`, got / total);
+  }
+  const out = new Uint8Array(got);
+  let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.length; }
+  return out.buffer;
+}
 
 const LS_FREQ = "naive_pinyin.user_freq";
 const LS_SETTINGS = "shouzibilu.settings";
@@ -264,20 +339,20 @@ function persistAll() {
 // ---------- 引擎 ----------
 async function boot() {
   setupMonoFont();
+  setBoot("初始化 wasm 引擎…", 0.03);
   Module = await createNaivePinyin();
-  [dictData, ziranma] = await Promise.all([
-    fetch("data/naive_pinyin.dict.txt").then(r => r.arrayBuffer()),
-    fetch("wasm/ziranma.json").then(r => r.json()),
-  ]);
+  setBoot("下载词典…", 0.08);
+  dictData = await fetchWithProgress("data/naive_pinyin.dict.txt", "下载词典");
+  ziranma = await fetch("wasm/ziranma.json").then(r => r.json());
   // bigram 语言模型异步加载：就绪后注入当前引擎；失败（如 404）静默
   // 退回 unigram 解码，页面行为与从前一致。
-  fetch("data/naive_pinyin.bigram.bin").then(r => {
-    if (!r.ok) throw new Error(r.status);
-    return r.arrayBuffer();
-  }).then(buf => {
-    bigramData = buf;
-    if (engineCtx) rebuildEngine();
-  }).catch(() => {});
+  fetchWithProgress("data/naive_pinyin.bigram.bin", "下载语言模型")
+    .then(buf => {
+      bigramData = buf;
+      if (engineCtx) rebuildEngine();
+      updateStatus();
+    })
+    .catch(() => {});
 
   // 恢复设置
   const s = loadSettings();
@@ -290,7 +365,10 @@ async function boot() {
   if (s.paging) pagingSel.value = s.paging;
   if (s.vkb) vkbSel.value = s.vkb;
 
+  setBoot("构建词典索引…", 0.97);
+  await new Promise(r => setTimeout(r, 30));  // 让进度条先画出来
   rebuildEngine();
+  hideBoot();
   // 恢复上次内容与映射草稿（首次打开显示介绍文字）
   const saved = localStorage.getItem(LS_CONTENT);
   editor.value = saved != null ? saved : DEFAULT_TEXT;

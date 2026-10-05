@@ -6,7 +6,8 @@
 - 整句输入：最少段音节切分 + 词格 beam 解码 + bigram 语言模型（可选，
   N-best 整句 + 词典精确行优先编排；未加载时退回 unigram DP）
 - 模糊音（可配）、动态调频、自造词学习
-- wasm 仅 ~230KB，内置精简词库（雾凇拼音 + jieba 词频，4.2MB）
+- wasm 仅 ~230KB，词表与 bigram 语言模型随包内置（msime 官方词表，
+  大小见 files 列表）
 - 许可：GPL-3.0-only（词格引擎与语言模型移植自 msime，语料中文维基百科
   CC-BY-SA 4.0，详见仓库 README「数据来源与许可」）
 
@@ -110,7 +111,10 @@ const engine = await createEngine({ shuangpin: ziranma.shuangpin },
 
 ## 许可与署名
 
-- 代码：MIT License
-- 内置词库衍生自 [雾凇拼音 rime-ice](https://github.com/iDvel/rime-ice)
-  （CC-BY 4.0）与 [jieba](https://github.com/fxsjy/jieba) 词典（MIT）
-- 算法受 [librime](https://github.com/rime/librime)（BSD）启发重写
+- 代码与词表：GPL-3.0-only（见包内 LICENSE）
+- 词表与语言模型来自 [msime 水杉输入法](https://github.com/metasequoiaime/msime)
+  （GPL-3.0；词表上游逐项说明见其
+  `resources/licenses/msime-engine-dictionary-NOTICE.md`；n-gram 语料为
+  中文维基百科，CC-BY-SA 4.0）
+- 词格引擎算法移植自 msime，承 libpinyin/sunpinyin 一脉公开设计；
+  亦受 [librime](https://github.com/rime/librime) 启发

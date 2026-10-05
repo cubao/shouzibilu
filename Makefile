@@ -32,10 +32,10 @@ CLI       := $(NATIVE_DIR)/cli
 
 WASM_OUT := $(WASM_DIR)/naive_pinyin.js
 
-# 词典工具
+# 词典工具（msime 官方词表, 见 tools/build_dict_msime.py 头注）
 DICT_OUT   := data/naive_pinyin.dict.txt
-RIME_ICE   := ../rime-ice
-JIEBA_DICT := data/jieba_dict.txt
+MSIME_DICT_VER := dict-v2.0.7
+MSIME_DL   := https://github.com/metasequoiaime/msime-dictionary/releases/download/$(MSIME_DICT_VER)
 
 .PHONY: all native test wasm smoke dict clean
 
@@ -72,6 +72,7 @@ $(CLI): $(LIB_OBJS) tools/cli.cc
 # ---- wasm ----
 # 需要 em++ 在 PATH 中：source ../emsdk/emsdk_env.sh
 wasm: $(WASM_OUT)
+	python3 tools/stamp_build.py index.html
 
 $(WASM_OUT): $(LIB_SRCS) $(NP_DIR)/src/*.h $(NP_DIR)/include/naive_pinyin/*.h Makefile
 	$(EMXX) $(EMXXFLAGS) $(INCLUDES) $(LIB_SRCS) -o $@ \
@@ -170,23 +171,18 @@ macos-install: macos
 # ---- 词典 ----
 dict: $(DICT_OUT)
 
-$(JIEBA_DICT):
-	curl -sL -o $@ https://raw.githubusercontent.com/fxsjy/jieba/master/jieba/dict.txt
+msime-dict-download:
+	curl -sL -o data/msime-pinyin.db $(MSIME_DL)/msime-pinyin.db
+	shasum -a 256 -c tools/msime-dict.sha256
 
-$(DICT_OUT): tools/build_dict.py $(JIEBA_DICT)
-	python3 tools/build_dict.py \
-	  --rime-ice $(RIME_ICE) \
-	  --jieba $(JIEBA_DICT) \
-	  --out $@
+$(DICT_OUT): tools/build_dict_msime.py data/msime-pinyin.db
+	python3 tools/build_dict_msime.py --db data/msime-pinyin.db --out $@
 
 # ---- bigram 语言模型（词格整句解码, 见 README「候选引擎 v2」）----
 # data/naive_pinyin.bigram.bin 是已入库的紧凑档（msime 全量表的 |值|>=1.0
 # 子集, ~6.4MB, wasm/npm/macOS 共用）。要全量档/重生成时:
 #   make lm-download   # 下载 msime 官方 bigram/trigram 全量表到 data/
 #   make lm            # 由全量表重新生成紧凑档
-MSIME_DICT_VER := dict-v2.0.7
-MSIME_DL := https://github.com/metasequoiaime/msime-dictionary/releases/download/$(MSIME_DICT_VER)
-
 lm-download:
 	curl -sL -o data/msime-bigram.bin $(MSIME_DL)/msime-bigram.bin
 	curl -sL -o data/msime-trigram.bin $(MSIME_DL)/msime-trigram.bin
@@ -202,7 +198,7 @@ data/naive_pinyin.bigram.bin: tools/subset_ngram.py data/msime-bigram.bin
 # 自然码双拼默认配置（前端作为默认 shuangpin map）
 ziranma: $(WASM_DIR)/ziranma.json
 
-$(WASM_DIR)/ziranma.json: tools/gen_ziranma.py tools/build_dict.py
+$(WASM_DIR)/ziranma.json: tools/gen_ziranma.py
 	python3 tools/gen_ziranma.py > $@
 
 clean:
